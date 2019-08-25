@@ -1,4 +1,8 @@
-dist/
 node_modules/
-.firebase/
-coverage/
+dist/
+.vscode/
+
+# service account keys
+src/*.json
+.firebaserc
+.settings
