@@ -1,0 +1,24 @@
+{
+    "compilerOptions": {
+      "target": "es6",
+      "module": "commonjs",
+      "moduleResolution": "node",
+      "outDir": "./dist",
+      "sourceMap": true,
+      "allowSyntheticDefaultImports": false,
+      "allowUnreachableCode": false,
+      "allowUnusedLabels": true,
+      "declaration": true,
+      "forceConsistentCasingInFileNames": true,
+      "noFallthroughCasesInSwitch": true,
+      "noEmitOnError": true,
+      "noImplicitReturns": true,
+      "noImplicitAny": true,
+      "strictNullChecks": true,
+      "alwaysStrict": false,
+      "noUnusedLocals": false
+    },
+    "include": [
+      "src/**/*", "localapp/**/*"
+    ]
+}

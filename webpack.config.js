@@ -16,6 +16,7 @@ const HtmlWebpackPlugin = require('html-webpack-plugin')
 
 module.exports = {
   mode: 'development',
+  context: __dirname + "/app",
   entry: './index.ts',
   output: {
     path: path.resolve(__dirname, 'dist'),

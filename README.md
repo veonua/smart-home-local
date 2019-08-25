@@ -1,6 +1,28 @@
-# Local Home SDK sample
+# Roboroch advance
 
-This sample shows how to integrate with the [Local Home SDK](https://developers.google.com/actions/smarthome/concepts/local). The Local Home SDK allow developers to add a local path to execute smart home intents by running TypeScript (or JavaScript) directly on Google Home smart speakers and Nest smart displays.
+This unofficial integration of the [Local Home SDK](https://developers.google.com/actions/smarthome/concepts/local) to control Roborock Vacuum cleaner. 
+
+Current version supports :
+
++ device start/stop/pause
++ device docking
++ device location
++ zone(room) cleaning 
++ each zone has default mode 
+    - eg. set higher suction power, when cleaning kitchen 
++ predefined device modes 
+   1. mopping
+   2. low
+   3. balanced
+   4. high
+   5. turbo
++ predefined target points, go to position
+
+Not supported:
++ UDP response is not awailable in Local Home SDK 0.1.0
+  + see [issue](https://issuetracker.google.com/issues/139276385)
+
+The Local Home SDK allow to execute smart home intents directly on Google Home smart speakers and Nest smart displays. 
 
 ## Prerequisites
 
@@ -12,29 +34,13 @@ This sample shows how to integrate with the [Local Home SDK](https://developers.
 
 - Follow the instruction to deploy the [smart home provider sample for Node.js](https://github.com/actions-on-google/smart-home-nodejs).
 - Follow the instructions to run the [smart home frontend](https://github.com/actions-on-google/smart-home-nodejs#setup-sample-service) locally.
-- Set up a new virtual device:
-  - Select `RGB Light`
-  - Enable `Local Execution`
-  - Set `Local Device ID` to `fakecandy-0`
+- Upload backup from [Flole app](https://play.google.com/store/apps/details?id=de.flole.xiaomi&hl=en) on login
 
 ### Setup the virtual device
 
 - Open the smart home project in the [Actions console](https://console.actions.google.com/), then perform these steps:
    - in `Build > Actions > Smart home > Actions`: Add the following attributes in the `Device Scan Configuration`:
-     - **UDP discovery address**: `255.255.255.255`
-     - **UDP discovery port in**: `3312`
-     - **UDP discovery port out**: `3311`
-     - **UDP discovery packet**: `ping`
-- Start the virtual light strip server:
-```
-npm install --prefix device/
-npm start --prefix device/ -- \
-          --udp_discovery_port 3311 \
-          --udp_discovery_packet ping \
-          --device_id fakecandy-0
-```
-This starts a server that replies to UDP discovery packets with device information and displays [openpixelcontrol](http://openpixelcontrol.org/) commands to the terminal in a colorful way.
-Note: The server needs to listen on the same local network as the Home device.
+     - **MDNS Service name**: `_miio._udp.local`
 
 ### Deploy the sample app
 
@@ -52,13 +58,6 @@ Note: The local development server needs to listen on the same local network as 
 - Go to the [smart home project in the Actions console](https://console.actions.google.com/)
 - In `Test > On device testing`: set the development URL to http://local-dev-server-hostname-or-ip:8080/
 
-#### Deploy to Firebase Hosting
-```
-npm run build --prefix app/
-npm run deploy --prefix app/ -- --project FIREBASE_PROJECT_ID
-```
-- Go to the [smart home project in the Actions console](https://console.actions.google.com/)
-- In `Test > On device testing`: set the development URL to `http://FIREBASE_PROJECT_ID.firebaseapp.com/`
 
 ### Test the Local Home SDK application
 
@@ -66,10 +65,11 @@ npm run deploy --prefix app/ -- --project FIREBASE_PROJECT_ID
 - Open `chrome://inspect`
 - Locate the Local Home SDK application and click `inspect` to launch the [Chrome developer tools](https://developers.google.com/web/tools/chrome-devtools/).
 - Try the following query
-  - `Turn on the light`
-  - `Turn off the light`
-  - `Set the light brightness to 50`
-  - `Set the light color to magenta`
+  - `Where is my roborock`
+  - `Start cleaning`
+  - `Clean my living room`
+  - `Set roborock mode to balanced`
+  - `Set roborock mode to mop the floor`
 
 ## Test and Lint
 ```
@@ -79,3 +79,10 @@ npm run lint --prefix device/
 
 ## License
 See `LICENSE`
+
+
+## Projects helped to create this implementation
+- https://npmjs.org/mijia
+- https://github.com/rytilahti/python-miio
+- https://github.com/actions-on-google/smart-home-local
+- dust-cloud community

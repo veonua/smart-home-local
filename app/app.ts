@@ -13,19 +13,24 @@
 
 /// <reference types="@google/local-home-sdk" />
 
-import { decodeFirst as cborDecodeFirst } from "cbor";
-import { IBrightnessAbsolute, IColorAbsolute, IOnOff,
-         ILightCommand, ILightState,
-         IFakecandyData } from "./types";
+import { IVacuumCommand,
+         IStatus,
+         IStartStop,
+         IDeviceState,
+         IModeSetting,
+         IDeviceCustomData} from "./types";
 
-// TODO(proppy): add typings
-const opcStream = require("opc");
+import { VacuumDevice } from "./vacumdevice"
+import { fan_power } from "./utils"
+
+const config = require('./config.json')
+
+const RESPONSE_SLEEP = 600;
+const portNumber: number = 54321;
 
 // HomeApp implements IDENTIFY and EXECUTE handler for smarthome local device execution.
 export class HomeApp {
-  // Led count will be updated to match device UDP scan data in IDENTIFY.
-  private ledCount: number = 16;
-  private portNumber: number = 7890;
+  private vacuums: Record<string, VacuumDevice> = {};
 
   constructor(private readonly app: smarthome.App) {
       this.app = app;
@@ -36,42 +41,47 @@ export class HomeApp {
     Promise<smarthome.IntentFlow.IdentifyResponse> => {
     console.log("IDENTIFY request", identifyRequest);
     // TODO(proppy): handle multiple inputs.
+    const cloudDevice =  identifyRequest.devices[0]
+    let customData = cloudDevice.customData as IDeviceCustomData;
+      
     const device = identifyRequest.inputs[0].payload.device;
-    if (device.udpScanData === undefined) {
-       throw Error(`identify request is missing discovery response: ${identifyRequest}`);
+    let devId = device.id || cloudDevice.id;
+
+    if (device.mdnsScanData) {
+      let name = device.mdnsScanData.additionals[0].name
+      if (!name.endsWith("._miio._udp.local"))
+        throw Error("invalid service "+name);
+
+      //service_split[0] = roborock-vacuum-s5_miio260426251
+    } else if (device.udpScanData) {
+      const udpScanData = Buffer.from(device.udpScanData, "hex");
+      console.debug("udpScanData:", udpScanData);
     }
-    // Raw discovery data are encoded as 'hex'.
-    const udpScanData = Buffer.from(device.udpScanData, "hex");
-    console.debug("udpScanData:", udpScanData);
-    return new Promise((resolve, reject) => {
-      // Device encoded discovery payload in CBOR.
-      cborDecodeFirst(udpScanData, (error: Error, discoveryData: IFakecandyData) => {
-        if (error != null) {
-          return reject(error);
-        }
-        console.debug("discoveryData:", discoveryData);
-        this.ledCount = discoveryData.leds;
-        this.portNumber = discoveryData.port;
-        const identifyResponse = {
+
+    if (this.vacuums[devId] === undefined) {
+      this.vacuums[devId] = new VacuumDevice(customData.token, customData.deviceId, config.fan_power, config.zones, config.targets);
+    }
+
+    return new Promise((resolve) => {
+      const identifyResponse = {
           intent: smarthome.Intents.IDENTIFY,
           requestId: identifyRequest.requestId,
           payload: {
             device: {
-              id: device.id || "deviceId",
-              type: "action.devices.types.LIGHT",
+              id: devId,
+              type: "action.devices.types.VACUUM",
               deviceInfo: {
-                manufacturer: "Colorful light maker",
-                model: discoveryData.model,
-                hwVersion: discoveryData.hw_rev,
-                swVersion: discoveryData.fw_rev,
+                manufacturer: "Roborock",
+                model: "S5",
+                hwVersion: "roborock.vacuum.s5",
+                swVersion: "3.3.9_001864",
               },
-              verificationId: discoveryData.id,
-            },
+              verificationId: "roborock-"+customData.deviceId,
+            }
           },
         };
         console.log("IDENTIFY response", identifyResponse);
         resolve(identifyResponse);
-      });
     });
   }
 
@@ -88,78 +98,119 @@ export class HomeApp {
     // success/failure for each devices.
     const executeResponse =  new smarthome.Execute.Response.Builder()
       .setRequestId(executeRequest.requestId);
-
+  
     // Handle light device commands for all devices.
-    return Promise.all(command.devices.map((device) => {
-      const params = execution.params as IOnOff | IColorAbsolute | IBrightnessAbsolute;
-      const opcMessage = opcMessageFromCommand(execution.command,
-                                               execution.params as ILightCommand,
-                                               this.ledCount);
-      console.debug("opcMessage:", opcMessage);
-      // Craft TCP request.
-      const deviceCommand = new smarthome.DataFlow.TcpRequestData();
-      deviceCommand.requestId = executeRequest.requestId;
-      deviceCommand.deviceId = device.id;
-      // TCP request data is encoded as 'hex'.
-      deviceCommand.data = opcMessage.toString("hex");
-      deviceCommand.port = this.portNumber;
-      deviceCommand.isSecure = false;
-      deviceCommand.operation = smarthome.Constants.TcpOperation.WRITE;
-      console.debug("TcpRequestData:", deviceCommand);
-      return this.app.getDeviceManager()
-        .send(deviceCommand)
-        .then((result: smarthome.DataFlow.CommandSuccess) => {
-          const state: ILightState = {
-            ...params,
-            online: true,
-          };
-          executeResponse.setSuccessState(result.deviceId, state);
-        })
-        .catch((e: smarthome.IntentFlow.HandlerError) => {
-          executeResponse.setErrorState(device.id, e.errorCode);
-        });
-    })).then(() => {
+    return Promise.all(command.devices.map(async (device) => {
+      
+      try {
+        let packet = this.vacuums[device.id];
+        
+        const result : IDeviceState = await promiseFromCommand(this.app.getDeviceManager(), executeRequest.requestId, device.id, 
+          packet, execution.command, (execution.params as IVacuumCommand));
+
+        executeResponse.setSuccessState(device.id, result);
+      }
+      catch (e) {
+        console.error(e);
+        executeResponse.setErrorState(device.id, e.errorCode);
+      }
+
+    }))
+    .then(() => {
       console.log("EXECUTE response", executeResponse);
-      // Return execution response to smarthome infrastructure.
       return executeResponse.build();
     });
   }
 }
 
-export function opcMessageFromCommand(command: string, params: ILightCommand,
-                                      ledCount: number): Buffer {
-  const stream = opcStream();
-  switch (command) {
-    case "action.devices.commands.OnOff": {
-      // Convert OnOff to Fadecandy color correction message
-      // with brightness 0 or 1.
-      const brightness = (params as IOnOff).on ? 1 : 0;
-      stream.writeColorCorrection({
-        whitepoint: [brightness, brightness, brightness],
-      });
-      return stream.read();
-    }
-    case "action.devices.commands.BrightnessAbsolute": {
-      // Convert OnOff to Fadecandy color correction message.
-      const brightness = (params as IBrightnessAbsolute).brightness / 100.0;
-      stream.writeColorCorrection({
-        whitepoint: [brightness, brightness, brightness],
-      });
-      return stream.read();
-    }
-    case "action.devices.commands.ColorAbsolute": {
-      // Convert OnOff to OPC set pixel 8-bit message.
-      const rgb = (params as IColorAbsolute).color.spectrumRGB;
-      const colorBuf = Buffer.alloc(ledCount * 3);
-      for (let i = 0; i < colorBuf.length; i += 3) {
-        colorBuf.writeUInt8(rgb >> 16 & 0xff, i + 0); // R
-        colorBuf.writeUInt8(rgb >>  8 & 0xff, i + 1); // G
-        colorBuf.writeUInt8(rgb >>  0 & 0xff, i + 2); // B
-      }
-      stream.writePixels(0, colorBuf);
-      return stream.read();
-    }
-    default:
-      throw Error(`Unsupported command: ${command}`);
+function _sleep(ms: number) {
+  return new Promise((resolve) => setTimeout(resolve, ms));
+}
+
+export async function promiseFromCommand(deviceManager:smarthome.DeviceManager, requestId: string, deviceId: string,
+        device:VacuumDevice,
+        command: string, params: IVacuumCommand) : Promise<IDeviceState> {
+        
+  if (device.needsHandshake) {
+    const handshakeCommand = new smarthome.DataFlow.UdpRequestData();
+    handshakeCommand.requestId = requestId;
+    handshakeCommand.deviceId = deviceId;
+    handshakeCommand.port = portNumber;
+    handshakeCommand.data = "21310020ffffffffffffffffffffffffffffffffffffffffffffffffffffffff";
+    
+    const handshake : Promise<void> = deviceManager
+          .send(handshakeCommand)
+          .then((result: smarthome.DataFlow.UdpResponseData) => {
+            console.log("handshake result", result);
+
+            device.packet.raw = Buffer.from("2131002000000000" + device.deviceId + "5d53e8ab" + device.token, "hex");
+          })
+
+    console.debug("sending hanshake...");
+    await handshake
+
+    await _sleep(RESPONSE_SLEEP);
   }
+
+  // const statusRequest = sendRequest(deviceManager, requestId, deviceId, device.convert("action.devices.QUERY", params))
+  // .then ((result) => {
+  //           console.log("status result", result);
+  //           //p.raw = Buffer.from("FF", "hex"); //result.data;
+  //           let data = {}
+  //           // if (result.data) {
+  //           //   data = JSON.parse(p.data.toString());
+  //           // } else {
+  //             data = {state:5}
+  //           // }
+  //           return (data as IStatus);
+  //         }
+  // )
+  
+  // console.debug("fetching status...");
+  // let status = await statusRequest;
+  // await _sleep(RESPONSE_SLEEP);
+  device.status = { state:5 } as IStatus
+  
+  let res = await sendRequest(deviceManager, requestId, deviceId, device.convert(command, params) )
+        .then((result: smarthome.DataFlow.UdpResponseData) => {
+          console.log("EXECUTE result", result);
+          return device.onResponse(command, params, result)
+          //p.raw = Buffer.from("FF", "hex"); // result.data;
+          //TODO: p.data
+        })
+
+  switch (command) {
+    case "action.devices.commands.SetModes": {
+      device.fan_power = fan_power( (params as IModeSetting).updateModeSettings.mode )
+      break;
+    }
+
+    case "action.devices.commands.StartStop": {
+      const new_mode = device.resetModeIfNeed((params as IStartStop))
+      if (new_mode) {
+        await _sleep(RESPONSE_SLEEP);
+        await sendRequest(deviceManager, requestId, deviceId, device.convert_fan_power(new_mode))
+          .then((result: smarthome.DataFlow.UdpResponseData) => {
+          console.log("EXECUTE set default mode ", result);
+        })
+      }
+    }
+  }
+      
+  return res
+}
+
+function sendRequest(
+    deviceManager:smarthome.DeviceManager, 
+    requestId:string, 
+    deviceId:string, 
+    buf:Buffer) : Promise<smarthome.DataFlow.UdpResponseData> {
+
+  const req = new smarthome.DataFlow.UdpRequestData() 
+  req.requestId = requestId;
+  req.deviceId = deviceId;
+  req.port = portNumber;
+  req.data = buf.toString('hex');
+  
+  return deviceManager.send(req)
 }
