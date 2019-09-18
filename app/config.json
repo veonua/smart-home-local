@@ -6,9 +6,11 @@
             "fan_power": 103
         },		  
         "living room" : {
+            "aliases": ["main room"],
             "zones" : [[21291,23966,26041,29466,1]] 
         },  
         "hall" : {
+            "aliases": ["whole", "hallway", "corridor"],
             "zones" : [[19979,29220,23779,30870,1]],
             "fan_power": 103
         },

@@ -2,6 +2,11 @@ import { IStatus, IFanPower, IVacuumCommand, IStartStop, IZone, IDeviceState, IP
 import { Packet } from "./packet";
 import { roboFromCommand } from "./utils";
 
+export interface IMyZone {
+	zones: [[number,number,number,number,number]];
+	fan_power?: IFanPower;
+  }
+
 export class VacuumDevice {
   onResponse(command: string, params: IVacuumCommand, result: smarthome.DataFlow.UdpResponseData): IDeviceState {
 	this.packet.updateLast();    
@@ -50,11 +55,11 @@ export class VacuumDevice {
 		};
   }
   
-	public packet: Packet = new Packet();
+	public packet: Packet;
 	public status: IStatus;
-	zones: Record<string, IZone>;
+	zones: Record<string, IMyZone>;
 	targets: Record<string, [number,number]>;
-	deviceId: string;
+	deviceId: number;
 	token: string;
 	default_fan_power: IFanPower;
 	
@@ -74,18 +79,34 @@ export class VacuumDevice {
 			this.last_mode = this.default_fan_power 
 		} else {
 			const z = this.zones[par.zone]
-			this.last_mode = z.fan_power || this.default_fan_power
+			if (z && z.fan_power) {
+				this.last_mode = z.fan_power		
+			} else {
+				this.last_mode = this.default_fan_power
+			}
 		}
 
 		return this.last_mode
 	}
 
-	constructor(token:string, deviceId:string, 
-				default_fan_power:IFanPower, zones: Record<string, IZone>, targets:Record<string, [number, number]>) {
+	constructor(deviceId:number, token:string, 
+				default_fan_power:IFanPower, zones: Map<string, IZone>, targets:Record<string, [number, number]>) {
 		this.status = {} as IStatus;
 		this.token = token
 		this.deviceId = deviceId
-		this.zones = zones
+		this.zones = {};
+		this.packet = new Packet(token, deviceId)
+
+		Object.entries(zones).forEach( 
+			([key,value])=> {
+			this.zones[key] = value
+			if (value.aliases) {
+				for (let alias of value.aliases) {
+					this.zones[alias] = value
+				}
+			}
+		})
+		
 		this.targets = targets
 		this.default_fan_power = default_fan_power
 		this.last_mode = default_fan_power;

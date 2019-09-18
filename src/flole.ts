@@ -1,11 +1,12 @@
 
 interface IFlole {
-    h:string, // device model
-    d:number, // device ID
+  // mdns = roborock-vacuum-s5_miio260426251._miio._udp.local
+    h:string, // device model - roborock.vacuum.s5
+    d:number, // device ID    - 260426251
     e:string, // token
     j:number, // ??
     c:string, // IP
-    f:string  // device name
+    f:string  // device name - Robot vacuum
   }
   
 export function loadFlole(buf:Buffer) : IFlole[] {

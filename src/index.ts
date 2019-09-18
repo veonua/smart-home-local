@@ -122,14 +122,27 @@ app.onSync(async (body, headers) => {
   };
 
   var id=0;
+
+  const availableZones = [
+    "kitchen",
+    "living room",
+    "bedroom",
+    "hall",
+    "whole",
+    "hallway",
+    "service"
+  ]
+
   //for (let fl of flole_config) {
     id++;
-    
-    const deviceInfo = "roborock..s5".split('.')//fl.h.split('.')
-    const deviceId = token_device[1]
+    const deviceNo = token_device[1]
+    const deviceId = "roborock-vacuum-s5_miio"+parseInt(deviceNo, 16)  // mdnsname: roborock-vacuum-s5_miio260426251._miio._udp.local
+    const customData = {
+      token: token_device[0], //flole_config[0].e
+    }
     
     const vacuum: SmartHomeV1SyncDevices = {
-      id: id.toString(),
+      id: deviceId,
       type: "action.devices.types.VACUUM",
       traits: [
         'action.devices.traits.StartStop',
@@ -139,7 +152,7 @@ app.onSync(async (body, headers) => {
       ],
       name: {
         defaultNames: ["Roborock"],
-        name: "Roborock",//fl.f,
+        name: "Roborock",
         nicknames: ["Roborock"],
       },
       attributes: {
@@ -147,53 +160,49 @@ app.onSync(async (body, headers) => {
         availableModes: [
           mode_fan
         ],
-        availableZones: [
-          "kitchen",
-          "living room",
-          "bedroom",
-          "hall",
-          "service"
-        ]
+        availableZones: availableZones
       },
-      customData: {
-        token: token_device[0],//flole_config[0].e,
-        deviceId: deviceId
-      },
+      customData: customData,
       deviceInfo: {
-        manufacturer: deviceInfo[0],
-        model: deviceInfo[2],
+        manufacturer: "roborock",
+        model: "s5",
         hwVersion: "1",
         swVersion: "1.2",
       },
       willReportState: true,
-      otherDeviceIds: [{deviceId:"roborock-" + deviceId}], // local execution
+      otherDeviceIds: [{deviceId: deviceId}], // local execution
     }
     devices.push(vacuum)
+
+    // id++;    
+    // const mop : SmartHomeV1SyncDevices = {
+    //   id: id.toString(),
+    //   type: "action.devices.types.MOP",
+    //   traits: [
+    //     'action.devices.traits.StartStop',
+    //     'action.devices.traits.Dock'
+    //   ],
+    //   name: {
+    //     defaultNames: ["Mop-Roborock"],
+    //     name: "Mop-Roborock",//fl.f,
+    //     nicknames: ["Mop"],
+    //   },
+    //   attributes: {
+    //     pausable: true,
+    //     availableZones: availableZones
+    //   },
+    //   customData: customData,
+    //   deviceInfo: {
+    //     manufacturer: deviceInfo[0],
+    //     model: deviceInfo[2]="-mop",
+    //     hwVersion: "1m",
+    //     swVersion: "1.2m",
+    //   },
+    //   willReportState: true,
+    //   otherDeviceIds: [{deviceId:"mop-roborock-" + deviceId}], // local execution
+    // }
+  //devices.push(mop)
   //}
-
-
-  // const scene1: SmartHomeV1SyncDevices = {
-  //   id: "111",
-  //   type: "action.devices.types.SCENE",
-  //   traits: [
-  //     'action.devices.traits.Scene'
-  //   ],
-  //   name: {
-  //     defaultNames: ["Smart Scene"],
-  //     name: "Smart Scene",
-  //     nicknames: ["Cleaning"],
-  //   },
-  //   deviceInfo: {
-  //     manufacturer: "robo-out-inc",
-  //     model: "sg1340",
-  //     hwVersion: "3.2",
-  //     swVersion: "11.4",
-  //   },
-  //   willReportState: false,
-  //   attributes: { sceneReversible: true },
-  //   otherDeviceIds: [{deviceId:"fakeclean-1"}], // local execution
-  // }
-  // devices.push(scene1)
 
   return {
     requestId: body.requestId,
@@ -215,7 +224,16 @@ app.onQuery(async (body, headers) => {
   const deviceStates: DeviceStatesMap = {}
   const {devices} = body.inputs[0].payload
   await asyncForEach(devices, async (device: {id: string}) => {
-    deviceStates[device.id] = {} //states
+    deviceStates[device.id] = {
+      "online": true,
+      "isDocked": true,
+      "isPaused": false,
+      "isRunning": false,
+      "currentModeSettings": {
+        "mode": "balanced"
+      },
+      "activeZones" : []
+    } //states
   })
   return {
     requestId: body.requestId,
@@ -239,7 +257,16 @@ app.onExecute(async (body, headers) => {
       //const states = await Firestore.execute(userId, device.id, execution[0])
       const command = execution[0].command;
 
-      let states : StatesMap = {}
+      let states : StatesMap = {
+        "online": true,
+        "isDocked": true,
+        "isPaused": false,
+        "isRunning": false,
+        "currentModeSettings": {
+          "mode": "balanced"
+        },
+        "activeZones" : []
+      }
       
       if (command == 'action.devices.commands.Locate') {
         // "params": {

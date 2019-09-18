@@ -36,30 +36,67 @@ export class HomeApp {
       this.app = app;
   }
 
+  // public devicesHandler = (request: smarthome.IntentFlow.ReachableDevicesRequest):
+  // smarthome.IntentFlow.ReachableDevicesResponse => {
+  //   console.debug("ReachableDevices request", request);
+    
+  //   // Reference to the local proxy device
+  //   const proxyDevice = request.inputs[0].payload.device.proxyDevice;
+  //   // proxyDevice customData is json string =(
+  //   const customData = request.devices[0].customData as IDeviceCustomData;
+    
+  //   const reachableDevices = [
+  //     // Each verificationId must match one of the otherDeviceIds
+  //     // in the SYNC response
+  //     { verificationId: "roborock-vacuum-s5_miio260426251" },
+  //     { verificationId: "mop-roborock-vacuum-s5_miio260426251" },
+  //   ];
+
+  //   console.debug("ReachableDevices ", reachableDevices);
+
+  //   // Return a response
+  //   const response: smarthome.IntentFlow.ReachableDevicesResponse = {
+  //     intent: smarthome.Intents.REACHABLE_DEVICES,
+  //     requestId: request.requestId,
+  //     payload: {
+  //       devices: reachableDevices,
+  //     },
+  //   };
+
+  //   console.debug("ReachableDevices response", response);
+    
+  //   return response;
+  // };
+
   // identifyHandlers decode UDP scan data and structured device information.
   public identifyHandler = (identifyRequest: smarthome.IntentFlow.IdentifyRequest):
     Promise<smarthome.IntentFlow.IdentifyResponse> => {
     console.log("IDENTIFY request", identifyRequest);
-    // TODO(proppy): handle multiple inputs.
-    const cloudDevice =  identifyRequest.devices[0]
-    let customData = cloudDevice.customData as IDeviceCustomData;
       
     const device = identifyRequest.inputs[0].payload.device;
-    let devId = device.id || cloudDevice.id;
+    
+    if (!device.mdnsScanData) 
+      throw Error("invalid service "+name);
 
-    if (device.mdnsScanData) {
-      let name = device.mdnsScanData.additionals[0].name
-      if (!name.endsWith("._miio._udp.local"))
-        throw Error("invalid service "+name);
+    let mdns_name = device.mdnsScanData.additionals[0].name // "roborock-vacuum-s5_miio260426251._miio._udp.local"
+    if (!mdns_name.endsWith("._miio._udp.local"))
+      throw Error("invalid service "+mdns_name);
 
-      //service_split[0] = roborock-vacuum-s5_miio260426251
-    } else if (device.udpScanData) {
-      const udpScanData = Buffer.from(device.udpScanData, "hex");
-      console.debug("udpScanData:", udpScanData);
-    }
+    let devId = mdns_name.substr(0, mdns_name.length-17);
+    let parts = devId.split("_miio");
+    let hwVersion = parts[0];
+    let devNumber = parseInt(parts[1]);    
+    
+    // if (device.udpScanData) {
+    //   const udpScanData = Buffer.from(device.udpScanData, "hex");
+    //   console.debug("udpScanData:", udpScanData);
+    // } 
+
+    let cloudDevice = identifyRequest.devices.filter(x=>x.id==devId)[0];
+    let customData = cloudDevice.customData as IDeviceCustomData;
 
     if (this.vacuums[devId] === undefined) {
-      this.vacuums[devId] = new VacuumDevice(customData.token, customData.deviceId, config.fan_power, config.zones, config.targets);
+      this.vacuums[devId] = new VacuumDevice(devNumber, customData.token, config.fan_power, config.zones, config.targets);
     }
 
     return new Promise((resolve) => {
@@ -73,10 +110,11 @@ export class HomeApp {
               deviceInfo: {
                 manufacturer: "Roborock",
                 model: "S5",
-                hwVersion: "roborock.vacuum.s5",
+                hwVersion: hwVersion,
                 swVersion: "3.3.9_001864",
               },
-              verificationId: "roborock-"+customData.deviceId,
+              isProxy: false,
+              verificationId: devId,
             }
           },
         };
@@ -100,19 +138,19 @@ export class HomeApp {
       .setRequestId(executeRequest.requestId);
   
     // Handle light device commands for all devices.
-    return Promise.all(command.devices.map(async (device) => {
+    return Promise.all(command.devices.map(async (google_device) => {
       
       try {
-        let packet = this.vacuums[device.id];
+        let vacuum = this.vacuums[google_device.id];
         
-        const result : IDeviceState = await promiseFromCommand(this.app.getDeviceManager(), executeRequest.requestId, device.id, 
-          packet, execution.command, (execution.params as IVacuumCommand));
+        const result : IDeviceState = await promiseFromCommand(this.app.getDeviceManager(), executeRequest.requestId, google_device.id, 
+        vacuum, execution.command, (execution.params as IVacuumCommand));
 
-        executeResponse.setSuccessState(device.id, result);
+        executeResponse.setSuccessState(google_device.id, result);
       }
       catch (e) {
         console.error(e);
-        executeResponse.setErrorState(device.id, e.errorCode);
+        executeResponse.setErrorState(google_device.id, e.errorCode);
       }
 
     }))
@@ -142,8 +180,8 @@ export async function promiseFromCommand(deviceManager:smarthome.DeviceManager, 
           .send(handshakeCommand)
           .then((result: smarthome.DataFlow.UdpResponseData) => {
             console.log("handshake result", result);
-
-            device.packet.raw = Buffer.from("2131002000000000" + device.deviceId + "5d53e8ab" + device.token, "hex");
+            const device_hex = ("00000000" + device.deviceId.toString(16)).substr(-8);
+            device.packet.raw = Buffer.from("2131002000000000" + device_hex + "5d53e8ab" + device.token, "hex");            
           })
 
     console.debug("sending hanshake...");

@@ -139,13 +139,13 @@ export interface IRoboVacuumCommand {
 }
 
 export interface IZone {
+  aliases: [string],
   zones: [[number,number,number,number,number]];
   fan_power?: IFanPower;
 }
 
 export interface IDeviceCustomData {
   token: string,
-  deviceId: string,
   zones: Record<string, [[number]]>,
   go_points: Record<string, [number]>
 }

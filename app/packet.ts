@@ -8,14 +8,14 @@ const OFFSET = -1;
 
 export class Packet {
 	public header: Buffer;
-	private _token: Buffer | null;
-	private _serverStampTime: number = 0;
+	private _token: Buffer | null = null;
+	private deviceId: number = 0;
 	private _tokenKey: Buffer | null = null;
 	private _tokenIV: Buffer | null = null;
 	private lastResponse: number = 0;
 	public data: Buffer|null = null;
 	
-	constructor() {
+	constructor(token:string, deviceId:number) {
 		this.header = Buffer.alloc(2 + 2 + 4 + 4 + 4 + 16);
 		this.header[0] = 0x21;
 		this.header[1] = 0x31;
@@ -24,8 +24,9 @@ export class Packet {
 			this.header[i] = 0xff;
 		}
 
-		this._serverStampTime = 0;
+		//this.token = Buffer.from(token);
 		this._token = null;
+		this.deviceId = deviceId;
 	}
 
 	debug (...args: any[]) {
@@ -72,7 +73,7 @@ export class Packet {
 				this.header[i] = 0x00;
 			}
 
-			this.header.writeUInt32BE(260426251, 8)
+			this.header.writeUInt32BE(this.deviceId, 8)
 
 			// Update the stamp to match server
 			// if (false && this._serverStampTime) {
@@ -121,12 +122,12 @@ export class Packet {
 		msg.copy(this.header, 0, 0, 32);
 		this.debug('<- ', this.header);
 
-		const stamp = this.stamp;
-		if(stamp > 0) {
+		//const stamp = this.stamp;
+		//if(stamp > 0) {
 			// If the device returned a stamp, store it
 			//this._serverStamp = this.stamp;
-			this._serverStampTime = Date.now();
-		}
+			//this._serverStampTime = Date.now();
+		//}
 
 		const encrypted = msg.slice(32);
 
@@ -179,9 +180,9 @@ export class Packet {
 		return this.header.slice(16);
 	}
 
-	get deviceId() {
-		return this.header.readUInt32BE(8);
-	}
+	// get deviceId() {
+	// 	return this.header.readUInt32BE(8);
+	// }
 
 	get stamp() {
 		return this.header.readUInt32BE(12);

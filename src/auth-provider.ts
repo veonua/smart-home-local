@@ -84,7 +84,7 @@ export async function registerAuthEndpoints(expressApp: express.Express) {
   })
 
   expressApp.all('/faketoken', async (req, res) => {
-    console.log(req)
+    //console.log(req.body)
     
     const grantType = req.query.grant_type
       ? req.query.grant_type : req.body.grant_type
@@ -92,8 +92,9 @@ export async function registerAuthEndpoints(expressApp: express.Express) {
     const HTTP_STATUS_OK = 200
     console.log(`Grant type ${grantType}`)
 
-    const token = req.query.code
-      ? req.query.code : req.body.code;
+    const token = req.body.refresh_token
+      ? req.body.refresh_token : req.body.code;
+
     console.log(`Code ${token}`)
 
     let obj

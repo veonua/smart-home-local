@@ -1,4 +1,4 @@
-# Roboroch advance
+# Roborock advance
 
 This unofficial integration of the [Local Home SDK](https://developers.google.com/actions/smarthome/concepts/local) to control Roborock Vacuum cleaner. 
 
@@ -19,10 +19,10 @@ Current version supports :
 + predefined target points, go to position
 
 Not supported:
-+ UDP response is not awailable in Local Home SDK 0.1.0
++ UDP response is not available in Local Home SDK 0.1.0
   + see [issue](https://issuetracker.google.com/issues/139276385)
 
-The Local Home SDK allow to execute smart home intents directly on Google Home smart speakers and Nest smart displays. 
+The Local Home SDK allows to execute smart home intents directly on Google Home smart speakers and Nest smart displays. 
 
 ## Prerequisites
 
