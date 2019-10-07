@@ -17,7 +17,7 @@
   "author": "Google Inc.",
   "license": "Apache-2.0",
   "engines": {
-    "node": "^8.0.0"
+    "node": "^10.0.0"
   },
   "dependencies": {
     "@google/local-home-sdk": "^0.1.0",

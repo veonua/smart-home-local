@@ -136,7 +136,7 @@ app.onSync(async (body, headers) => {
   //for (let fl of flole_config) {
     id++;
     const deviceNo = token_device[1]
-    const deviceId = "roborock-vacuum-s5_miio"+parseInt(deviceNo, 16)  // mdnsname: roborock-vacuum-s5_miio260426251._miio._udp.local
+    const deviceId = ""+parseInt(deviceNo, 16)  // "roborock-vacuum-s5_miio"+ mdnsname: roborock-vacuum-s5_miio260426251._miio._udp.local
     const customData = {
       token: token_device[0], //flole_config[0].e
     }
@@ -207,7 +207,7 @@ app.onSync(async (body, headers) => {
   return {
     requestId: body.requestId,
     payload: {
-      agentUserId: "1234",
+      agentUserId: deviceNo,
       devices,
     },
   }

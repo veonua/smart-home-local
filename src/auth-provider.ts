@@ -61,7 +61,7 @@ export async function registerAuthEndpoints(expressApp: express.Express) {
     let fl = loadFlole(file.data)[0]
 
     const deviceId = ("00000000" + fl.d.toString(16)).substr(-8);
-    const code = fl.e + "_" + deviceId
+    const code = fl.e + "_" + deviceId + "_" + fl.h
 
     const responseurl = util.format('%s?code=%s&state=%s',
       decodeURIComponent(req.query.redirect_uri), code,

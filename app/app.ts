@@ -82,11 +82,11 @@ export class HomeApp {
     if (!mdns_name.endsWith("._miio._udp.local"))
       throw Error("invalid service "+mdns_name);
 
-    let devId = mdns_name.substr(0, mdns_name.length-17);
-    let parts = devId.split("_miio");
+    let parts = mdns_name.substr(0, mdns_name.length-17).split("_miio");
     let hwVersion = parts[0];
+    let hwParts = parts[0].split("-")
     let devNumber = parseInt(parts[1]);    
-    
+    let devId = parts[1];
     // if (device.udpScanData) {
     //   const udpScanData = Buffer.from(device.udpScanData, "hex");
     //   console.debug("udpScanData:", udpScanData);
@@ -108,8 +108,8 @@ export class HomeApp {
               id: devId,
               type: "action.devices.types.VACUUM",
               deviceInfo: {
-                manufacturer: "Roborock",
-                model: "S5",
+                manufacturer: hwParts[0],
+                model: hwParts[2],
                 hwVersion: hwVersion,
                 swVersion: "3.3.9_001864",
               },
