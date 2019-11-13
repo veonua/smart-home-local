@@ -1,25 +1,26 @@
 {
-    "fan_power" : 102, 
-    "zones": {
-        "kitchen": {
-            "zones" : [[20232,31075,22032,34775,1]],
-            "fan_power": 103
-        },		  
-        "living room" : {
-            "aliases": ["main room"],
-            "zones" : [[21291,23966,26041,29466,1]] 
-        },  
-        "hall" : {
-            "aliases": ["whole", "hallway", "corridor"],
-            "zones" : [[19979,29220,23779,30870,1]],
-            "fan_power": 103
-        },
-        "bedroom": {
-            "zones" : [[22199,31072,26099,34822,1]]
-        }
+"fan_power" : 102, // normal 
+"zones": {
+    "kitchen": {
+        "zones" : [[22074,28511,25774,31061,1]],
+        "fan_power": 103 // turbo
+    },        
+    "living room" : {
+        "zones" : [[25103,25070,31903,28620,1]]
+    },  
+    "hallway" : {
+        "aliases": ["whole", "hall", "corridor"],
+        "zones" : [[21853,26797,24803,28347,1]],
+        "fan_power": 103
     },
-  
-    "targets" : { 
-        "service": [22500,25550]
+    "pantry": {
+        "zones" : [[25808,29178,26908,30928,1]]
+    },
+    "playroom": {
+        "zones" : [[27138,28727,31838,31077,1]]
     }
+},
+
+"targets" : {  // go to points
+    "service": [22500,25550]
 }
