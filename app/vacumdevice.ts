@@ -31,8 +31,8 @@ export class VacuumDevice {
 		}
 
 		case "action.devices.commands.PauseUnpause" : {
-			const p = (params as IPause).pause
-			this.status.state = p? 10 : 5
+			const pause = (params as IPause).pause
+			this.status.state = pause? 10 : 5
 			break
 		}
 

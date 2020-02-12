@@ -23,8 +23,6 @@ import { IVacuumCommand,
 import { VacuumDevice } from "./vacumdevice"
 import { fan_power } from "./utils"
 
-const config = require('./config.json')
-
 const RESPONSE_SLEEP = 600;
 const portNumber: number = 54321;
 
@@ -78,7 +76,7 @@ export class HomeApp {
     if (!device.mdnsScanData) 
       throw Error("invalid service "+name);
 
-    let mdns_name = device.mdnsScanData.additionals[0].name // "roborock-vacuum-s5_miio260426251._miio._udp.local"
+    let mdns_name = device.mdnsScanData.serviceName // "roborock-vacuum-s5_miio260426251._miio._udp.local"
     if (!mdns_name.endsWith("._miio._udp.local"))
       throw Error("invalid service "+mdns_name);
 
@@ -96,6 +94,7 @@ export class HomeApp {
     let customData = cloudDevice.customData as IDeviceCustomData;
 
     if (this.vacuums[devId] === undefined) {
+      let config = customData
       this.vacuums[devId] = new VacuumDevice(devNumber, customData.token, config.fan_power, config.zones, config.targets);
     }
 

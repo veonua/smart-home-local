@@ -39,6 +39,8 @@ import {
 import * as Auth from './auth-provider'
 import * as Config from './config-provider'
 
+const maps = require('./maps.json')
+
 const expressApp = express()
 expressApp.use(fileupload())
 expressApp.use(cors())
@@ -125,21 +127,33 @@ app.onSync(async (body, headers) => {
 
   const availableZones = [
     "kitchen",
-    "living room",
-    "bedroom",
-    "hall",
-    "whole",
-    "hallway",
-    "service"
+    "living room", "dining room", "family room", 
+    "bedroom", "master bedroom",
+    "hall", "whole", "hallway", "passage",
+    "service",
+    "pantry",
+    "playroom"
   ]
 
   //for (let fl of flole_config) {
     id++;
+    
     const deviceNo = token_device[1]
     const deviceId = ""+parseInt(deviceNo, 16)  // "roborock-vacuum-s5_miio"+ mdnsname: roborock-vacuum-s5_miio260426251._miio._udp.local
-    const customData = {
-      token: token_device[0], //flole_config[0].e
+    
+    console.log("Sync '"+deviceId+"'")
+    let customData : any = {}
+    if (deviceId in maps){
+      console.log("loading map...")
+      customData = maps[deviceId]
+    } else {
+      console.log("can not find the map, send 260426251")
+      
+      console.log(Object.keys(maps));
+      customData = maps['260426251']
     }
+    customData.token = token_device[0]; //flole_config[0].e
+
     
     const vacuum: SmartHomeV1SyncDevices = {
       id: deviceId,

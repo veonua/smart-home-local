@@ -146,6 +146,7 @@ export interface IZone {
 
 export interface IDeviceCustomData {
   token: string,
-  zones: Record<string, [[number]]>,
-  go_points: Record<string, [number]>
+  fan_power : IFanPower,
+  zones: Map<string, IZone>,
+  targets: Record<string, [number,number]>
 }
