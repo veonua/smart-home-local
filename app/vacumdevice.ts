@@ -1,11 +1,11 @@
-import { IStatus, IFanPower, IVacuumCommand, IStartStop, IZone, IDeviceState, IPause } from "./types"
+import { IStatus, IFanPower, IVacuumCommand, IStartStop, IZone, IDeviceState, IPause, ISegment } from "./types"
 import { Packet } from "./packet";
 import { roboFromCommand } from "./utils";
 
-export interface IMyZone {
-	zones: [[number,number,number,number,number]];
-	fan_power?: IFanPower;
-  }
+// export interface IMyZone {
+// 	zones: [[number,number,number,number,number]];
+// 	fan_power?: IFanPower;
+//   }
 
 export class VacuumDevice {
   onResponse(command: string, params: IVacuumCommand, result: smarthome.DataFlow.UdpResponseData): IDeviceState {
@@ -57,7 +57,8 @@ export class VacuumDevice {
   
 	public packet: Packet;
 	public status: IStatus;
-	zones: Record<string, IMyZone>;
+	zones: Record<string, IZone>;
+	segments: Record<string, ISegment>;
 	targets: Record<string, [number,number]>;
 	deviceId: number;
 	token: string;
@@ -90,19 +91,30 @@ export class VacuumDevice {
 	}
 
 	constructor(deviceId:number, token:string, 
-				default_fan_power:IFanPower, zones: Map<string, IZone>, targets:Record<string, [number, number]>) {
+				default_fan_power:IFanPower, segments: Map<string, ISegment>, zones: Map<string, IZone>, targets:Record<string, [number, number]>) {
 		this.status = {} as IStatus;
 		this.token = token
 		this.deviceId = deviceId
-		this.zones = {};
 		this.packet = new Packet(token, deviceId)
 
+		this.zones = {};
 		Object.entries(zones).forEach( 
 			([key,value])=> {
 			this.zones[key] = value
 			if (value.aliases) {
 				for (let alias of value.aliases) {
 					this.zones[alias] = value
+				}
+			}
+		})
+
+		this.segments = {};
+		Object.entries(segments).forEach( 
+			([key,value])=> {
+			this.segments[key] = value
+			if (value.aliases) {
+				for (let alias of value.aliases) {
+					this.segments[alias] = value
 				}
 			}
 		})

@@ -85,17 +85,13 @@ export class HomeApp {
     let hwParts = parts[0].split("-")
     let devNumber = parseInt(parts[1]);    
     let devId = parts[1];
-    // if (device.udpScanData) {
-    //   const udpScanData = Buffer.from(device.udpScanData, "hex");
-    //   console.debug("udpScanData:", udpScanData);
-    // } 
 
     let cloudDevice = identifyRequest.devices.filter(x=>x.id==devId)[0];
     let customData = cloudDevice.customData as IDeviceCustomData;
 
     if (this.vacuums[devId] === undefined) {
       let config = customData
-      this.vacuums[devId] = new VacuumDevice(devNumber, customData.token, config.fan_power, config.zones, config.targets);
+      this.vacuums[devId] = new VacuumDevice(devNumber, customData.token, config.fan_power, config.segments, config.zones, config.targets);
     }
 
     return new Promise((resolve) => {
