@@ -73,6 +73,34 @@ async function getUserIdOrThrow(headers: Headers): Promise<string> {
   return userId
 }
 
+function empty_map() {
+  var seg : any = {}
+  for (var i=1; i<=30; i++) {
+    seg['room '+i] = {'segments' : [i]}
+  }
+
+  return {'segments':seg, 
+          'fan_power':101,
+          "targets" : { "service": [22500,25500] }
+        }
+}
+
+function extract_zones(map:any): string[] {
+  var res : string[] = []
+
+  if (map.hasOwnProperty('zones')) {
+    res = res.concat( Object.keys(map.zones) )
+  }
+  if (map.hasOwnProperty('targets')) {
+    res = res.concat( Object.keys(map.targets) )
+  }
+  if (map.hasOwnProperty('segments')) {
+    res = res.concat( Object.keys(map.segments) )
+  }
+
+  return res
+}
+
 app.onSync(async (body, headers) => {
   const token_device = (await getUserIdOrThrow(headers)).split('_')
   const devices: SmartHomeV1SyncDevices[] = []
@@ -125,16 +153,6 @@ app.onSync(async (body, headers) => {
 
   var id=0;
 
-  const availableZones = [
-    "kitchen",
-    "living room", "dining room", "family room", 
-    "bedroom", "master bedroom",
-    "hall", "whole", "hallway", "passage",
-    "service",
-    "pantry",
-    "playroom"
-  ]
-
   //for (let fl of flole_config) {
     id++;
     
@@ -147,11 +165,12 @@ app.onSync(async (body, headers) => {
       console.log("loading map...")
       customData = maps[deviceId]
     } else {
-      console.log("can not find the map, send 260426251")
+      console.log("can not find the map, send default")
       
       console.log(Object.keys(maps));
-      customData = maps['260426251']
+      customData = empty_map()
     }
+    let availableZones = extract_zones(customData)
     customData.token = token_device[0]; //flole_config[0].e
 
     

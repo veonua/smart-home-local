@@ -55,22 +55,31 @@ export function roboFromCommand(command: string, params: IVacuumCommand, device:
               };
         }
 
-        const z = device.zones[p.zone]
-        if (z) 
+		const segment = device.segments[p.zone]
+		if (segment) 
+			return {
+				id: id,
+				method: "app_segment_clean",
+				params: segment.segments
+			}
+
+        const zone = device.zones[p.zone]
+        if (zone) 
             return {
                 id: id,
                 method: "app_zoned_clean",
-                params: z.zones
+                params: zone.zones
               };
 
-        const t = device.targets[p.zone]
-        if (t) 
+        const target = device.targets[p.zone]
+        if (target) 
               return {
                 id: id,
                 method: "app_goto_target",
-                params: t 
-              }
-
+                params: target 
+			  }
+			  
+		
         // default
         return {
                 id: id,

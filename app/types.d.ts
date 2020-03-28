@@ -123,19 +123,17 @@ export interface IDeviceState {
 
 export type IVacuumState = IVacuumCommand & IDeviceState;
 
-export interface IFakecandyData {
-  id: string;
-  model: string;
-  hw_rev: string;
-  fw_rev: string;
-  leds: number;
-  port: number;
-}
 
 export interface IRoboVacuumCommand {
   id: number;
   method: string;
   params?: any[];
+}
+
+export interface ISegment {
+  aliases: [string],
+  segments: [number];
+  fan_power?: IFanPower;
 }
 
 export interface IZone {
@@ -147,6 +145,7 @@ export interface IZone {
 export interface IDeviceCustomData {
   token: string,
   fan_power : IFanPower,
+  segments: Map<string, ISegment>,
   zones: Map<string, IZone>,
   targets: Record<string, [number,number]>
 }
