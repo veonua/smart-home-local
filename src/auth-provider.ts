@@ -57,8 +57,9 @@ export async function registerAuthEndpoints(expressApp: express.Express) {
       return res.redirect("/login?no_file");
     
     const file = (req.files.file1 as UploadedFile)
-    if (file === undefined) {return res.redirect("/login?no_file")}
-    let fl = loadFlole(file.data)[0]
+    if (file === undefined) { return res.redirect("/login?no_file") }
+    let floleAll = loadFlole(file.data)
+    let fl = floleAll[floleAll.length - 1]
 
     const deviceId = ("00000000" + fl.d.toString(16)).substr(-8);
     const code = fl.e + "_" + deviceId + "_" + fl.h

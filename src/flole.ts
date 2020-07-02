@@ -5,8 +5,12 @@ interface IFlole {
     d:number, // device ID    - 260426251
     e:string, // token
     j:number, // ??
+    g: number, // device list order
     c:string, // IP
-    f:string  // device name - Robot vacuum
+    f:string,  // device name - Robot vacuum
+    a:string, // server sg
+    b:string, // email,
+    i:string  // password?
   }
   
 export function loadFlole(buf:Buffer) : IFlole[] {
