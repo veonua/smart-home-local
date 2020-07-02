@@ -21,6 +21,7 @@ export interface IColorAbsolute {
 export interface IStartStop {
   start: boolean;
   zone: string|undefined;
+  multipleZones: string[]|undefined;
 }
 
 export interface IPause {
@@ -145,7 +146,7 @@ export interface IZone {
 export interface IDeviceCustomData {
   token: string,
   fan_power : IFanPower,
-  segments: Map<string, ISegment>,
-  zones: Map<string, IZone>,
-  targets: Record<string, [number,number]>
+  segments?: Map<string, ISegment>,
+  zones?: Map<string, IZone>,
+  targets?: Record<string, [number,number]>
 }

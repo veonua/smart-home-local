@@ -166,8 +166,6 @@ app.onSync(async (body, headers) => {
       customData = maps[deviceId]
     } else {
       console.log("can not find the map, send default")
-      
-      console.log(Object.keys(maps));
       customData = empty_map()
     }
     let availableZones = extract_zones(customData)
@@ -353,7 +351,7 @@ app.onDisconnect(async (body, headers) => {
 expressApp.post('/smarthome', app)
 
 expressApp.post('/smarthome/update', async (req, res) => {
-  console.log(req.body)
+  // console.log(req.body)
   const {userId, deviceId, name, nickname, states} = req.body
   try {
     //await Firestore.updateDevice(userId, deviceId, name, nickname, states)
@@ -368,7 +366,7 @@ expressApp.post('/smarthome/update', async (req, res) => {
         },
       },
     })
-    console.log(reportStateResponse)
+    // console.log(reportStateResponse)
     res.status(200).send('OK')
   } catch(e) {
     console.error(e)
@@ -377,7 +375,7 @@ expressApp.post('/smarthome/update', async (req, res) => {
 })
 
 expressApp.post('/smarthome/create', async (req, res) => {
-  console.log(req.body)
+  // console.log(req.body)
   const {userId, data} = req.body
   try {
     //await Firestore.addDevice(userId, data)
@@ -390,7 +388,7 @@ expressApp.post('/smarthome/create', async (req, res) => {
 })
 
 expressApp.post('/smarthome/delete', async (req, res) => {
-  console.log(req.body)
+  // console.log(req.body)
   const {userId, deviceId} = req.body
   try {
     //await Firestore.deleteDevice(userId, deviceId)

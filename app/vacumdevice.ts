@@ -8,7 +8,7 @@ import { roboFromCommand } from "./utils";
 //   }
 
 export class VacuumDevice {
-  onResponse(command: string, params: IVacuumCommand, result: smarthome.DataFlow.UdpResponseData): IDeviceState {
+	onResponse(command: string, params: IVacuumCommand, result: smarthome.DataFlow.UdpResponseData): IDeviceState {
 	this.packet.updateLast();    
 
 	switch (command) {
@@ -42,9 +42,9 @@ export class VacuumDevice {
 		}
 
 		case "action.devices.commands.Locate": {
-		  return {
-			generatedAlert: true,
-		  };
+			return {
+				generatedAlert: true,
+			};
 		}
 	}
 
@@ -53,8 +53,8 @@ export class VacuumDevice {
 		isPaused: this.is_paused,
 		online: true,
 		};
-  }
-  
+	}
+
 	public packet: Packet;
 	public status: IStatus;
 	zones: Record<string, IZone>;
@@ -91,35 +91,43 @@ export class VacuumDevice {
 	}
 
 	constructor(deviceId:number, token:string, 
-				default_fan_power:IFanPower, segments: Map<string, ISegment>, zones: Map<string, IZone>, targets:Record<string, [number, number]>) {
+				default_fan_power:IFanPower, segments?: Map<string, ISegment>, zones?: Map<string, IZone>, targets?:Record<string, [number, number]>) {
 		this.status = {} as IStatus;
 		this.token = token
 		this.deviceId = deviceId
 		this.packet = new Packet(token, deviceId)
 
 		this.zones = {};
-		Object.entries(zones).forEach( 
-			([key,value])=> {
-			this.zones[key] = value
-			if (value.aliases) {
-				for (let alias of value.aliases) {
-					this.zones[alias] = value
+		if (zones) {
+			Object.entries(zones).forEach( 
+				([key,value])=> {
+				this.zones[key] = value
+				if (value.aliases) {
+					for (let alias of value.aliases) {
+						this.zones[alias] = value
+					}
 				}
-			}
-		})
+			})
+		}
 
 		this.segments = {};
-		Object.entries(segments).forEach( 
-			([key,value])=> {
-			this.segments[key] = value
-			if (value.aliases) {
-				for (let alias of value.aliases) {
-					this.segments[alias] = value
+		if (segments) {
+			Object.entries(segments).forEach( 
+				([key,value])=> {
+				this.segments[key] = value
+				if (value.aliases) {
+					for (let alias of value.aliases) {
+						this.segments[alias] = value
+					}
 				}
-			}
-		})
+			})
+		}
 		
-		this.targets = targets
+		if (targets) {
+			this.targets = targets
+		} else {
+			this.targets = {}
+		}
 		this.default_fan_power = default_fan_power
 		this.last_mode = default_fan_power;
 	}
@@ -129,7 +137,7 @@ export class VacuumDevice {
 		this.last_mode = val
 		this.last_mode_time = Date.now()
 	}
-  
+
 	get is_on() : boolean {
 		return [5,6,11,17,18].includes(this.status.state)
 	}
@@ -158,7 +166,7 @@ export class VacuumDevice {
 			id:Math.floor(Math.random()*1024) + 1024,
 			method: "set_custom_mode",
 			params: [value]
-		  }), 'utf8');
+		}), 'utf8');
 		return this.packet.raw
 	}
 }

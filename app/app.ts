@@ -13,12 +13,12 @@
 
 /// <reference types="@google/local-home-sdk" />
 
-import { IVacuumCommand,
-         IStatus,
-         IStartStop,
-         IDeviceState,
-         IModeSetting,
-         IDeviceCustomData} from "./types";
+import {  IVacuumCommand,
+          IStatus,
+          IStartStop,
+          IDeviceState,
+          IModeSetting,
+          IDeviceCustomData} from "./types";
 
 import { VacuumDevice } from "./vacumdevice"
 import { fan_power } from "./utils"
@@ -90,8 +90,8 @@ export class HomeApp {
     let customData = cloudDevice.customData as IDeviceCustomData;
 
     if (this.vacuums[devId] === undefined) {
-      let config = customData
-      this.vacuums[devId] = new VacuumDevice(devNumber, customData.token, config.fan_power, config.segments, config.zones, config.targets);
+      //let config = customData
+      this.vacuums[devId] = new VacuumDevice(devNumber, customData.token, customData.fan_power, customData.segments, customData.zones, customData.targets);
     }
 
     return new Promise((resolve) => {
