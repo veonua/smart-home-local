@@ -170,18 +170,20 @@ export async function promiseFromCommand(deviceManager:smarthome.DeviceManager, 
     handshakeCommand.deviceId = deviceId;
     handshakeCommand.port = portNumber;
     handshakeCommand.data = "21310020ffffffffffffffffffffffffffffffffffffffffffffffffffffffff";
+    handshakeCommand.expectedResponsePackets = 1;
     
     const handshake : Promise<void> = deviceManager
           .send(handshakeCommand)
-          .then((result: smarthome.DataFlow.UdpResponseData) => {
-            console.log("handshake result", result);
+          .then((result: smarthome.DataFlow.CommandSuccess) => {
+            const udpResult = result as smarthome.DataFlow.UdpResponseData;
+            const response = udpResult.udpResponse.responsePackets?[0]:""; // 21310020000000000F85CA0B5F183C88FFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFF
+            console.log("handshake result", udpResult);
             const device_hex = ("00000000" + device.deviceId.toString(16)).substr(-8);
             device.packet.raw = Buffer.from("2131002000000000" + device_hex + "5d53e8ab" + device.token, "hex");            
           })
 
     console.debug("sending hanshake...");
     await handshake
-
     await _sleep(RESPONSE_SLEEP);
   }
 
@@ -208,8 +210,6 @@ export async function promiseFromCommand(deviceManager:smarthome.DeviceManager, 
         .then((result: smarthome.DataFlow.UdpResponseData) => {
           console.log("EXECUTE result", result);
           return device.onResponse(command, params, result)
-          //p.raw = Buffer.from("FF", "hex"); // result.data;
-          //TODO: p.data
         })
 
   switch (command) {
@@ -225,6 +225,7 @@ export async function promiseFromCommand(deviceManager:smarthome.DeviceManager, 
         await sendRequest(deviceManager, requestId, deviceId, device.convert_fan_power(new_mode))
           .then((result: smarthome.DataFlow.UdpResponseData) => {
           console.log("EXECUTE set default mode ", result);
+          var resp = device.decode(result.udpResponse.responsePackets)
         })
       }
     }
@@ -233,17 +234,20 @@ export async function promiseFromCommand(deviceManager:smarthome.DeviceManager, 
   return res
 }
 
-function sendRequest(
+async function sendRequest(
     deviceManager:smarthome.DeviceManager, 
     requestId:string, 
     deviceId:string, 
-    buf:Buffer) : Promise<smarthome.DataFlow.UdpResponseData> {
+    buf:Buffer,
+    expectedResponse:boolean=true) : Promise<smarthome.DataFlow.UdpResponseData> {
 
   const req = new smarthome.DataFlow.UdpRequestData() 
   req.requestId = requestId;
   req.deviceId = deviceId;
   req.port = portNumber;
   req.data = buf.toString('hex');
+  if (expectedResponse)
+    req.expectedResponsePackets = 1;
   
-  return deviceManager.send(req)
+  return await deviceManager.send(req) as smarthome.DataFlow.UdpResponseData;
 }

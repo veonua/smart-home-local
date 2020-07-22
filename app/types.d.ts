@@ -11,13 +11,6 @@
  * limitations under the License.
  */
 
-export interface IColorAbsolute {
-  color: {
-    name: string;
-    spectrumRGB: number;
-  };
-}
-
 export interface IStartStop {
   start: boolean;
   zone: string|undefined;
@@ -124,6 +117,10 @@ export interface IDeviceState {
 
 export type IVacuumState = IVacuumCommand & IDeviceState;
 
+export interface IRoboVacuumResponse {
+  id: number;
+  result: any;
+}
 
 export interface IRoboVacuumCommand {
   id: number;

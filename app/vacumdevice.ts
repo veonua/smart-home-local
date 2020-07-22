@@ -1,4 +1,4 @@
-import { IStatus, IFanPower, IVacuumCommand, IStartStop, IZone, IDeviceState, IPause, ISegment } from "./types"
+import { IStatus, IFanPower, IVacuumCommand, IStartStop, IZone, IDeviceState, IPause, ISegment, IRoboVacuumResponse } from "./types"
 import { Packet } from "./packet";
 import { roboFromCommand } from "./utils";
 
@@ -9,42 +9,46 @@ import { roboFromCommand } from "./utils";
 
 export class VacuumDevice {
 	onResponse(command: string, params: IVacuumCommand, result: smarthome.DataFlow.UdpResponseData): IDeviceState {
-	this.packet.updateLast();    
+	this.packet.updateLast(); 
+	var resp = this.decode(result.udpResponse.responsePackets)   
+	var resp_result = resp?.result
 
-	switch (command) {
-		case "action.devices.commands.StartStop": {
-			const p = (params as IStartStop)
-			if (!p.start) {
-				this.status.state = 6
-			} else {
-				const zone = p.zone
-				if (zone) {
-					if (this.zones[zone])
-						this.status.state = 17
-					else if (this.targets[zone])
-						this.status.state = 16
+	if (resp_result == ['ok']) {
+		switch (command) {
+			case "action.devices.commands.StartStop": {
+				const p = (params as IStartStop)
+				if (!p.start) {
+					this.status.state = 6
 				} else {
-					this.status.state = 5
+					const zone = p.zone
+					if (zone) {
+						if (this.zones[zone])
+							this.status.state = 17
+						else if (this.targets[zone])
+							this.status.state = 16
+					} else {
+						this.status.state = 5
+					}
 				}
+				break
 			}
-			break
-		}
 
-		case "action.devices.commands.PauseUnpause" : {
-			const pause = (params as IPause).pause
-			this.status.state = pause? 10 : 5
-			break
-		}
+			case "action.devices.commands.PauseUnpause" : {
+				const pause = (params as IPause).pause
+				this.status.state = pause? 10 : 5
+				break
+			}
 
-		case "action.devices.commands.Dock" : {
-			this.status.state = 15
-			break
-		}
+			case "action.devices.commands.Dock" : {
+				this.status.state = 15
+				break
+			}
 
-		case "action.devices.commands.Locate": {
-			return {
-				generatedAlert: true,
-			};
+			case "action.devices.commands.Locate": {
+				return {
+					generatedAlert: true,
+				};
+			}
 		}
 	}
 
@@ -95,7 +99,7 @@ export class VacuumDevice {
 		this.status = {} as IStatus;
 		this.token = token
 		this.deviceId = deviceId
-		this.packet = new Packet(token, deviceId)
+		this.packet = new Packet(deviceId) // token
 
 		this.zones = {};
 		if (zones) {
@@ -168,6 +172,19 @@ export class VacuumDevice {
 			params: [value]
 		}), 'utf8');
 		return this.packet.raw
+	}
+
+	decode(value: string[]|undefined): IRoboVacuumResponse | null {
+		if (!value)
+			return null;
+		
+		var p = this.packet.clone(); //new Packet(this.deviceId);
+		p.raw = Buffer.from(value[0], "hex");
+		if (p.data==null) return null;
+		var data_str = p.data.toString()
+		data_str = data_str.substring(0, data_str.lastIndexOf("}")+1);
+		console.log("response (json) ", data_str);
+		return JSON.parse(data_str);
 	}
 }
 

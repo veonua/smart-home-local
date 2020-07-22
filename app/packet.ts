@@ -15,7 +15,7 @@ export class Packet {
 	private lastResponse: number = 0;
 	public data: Buffer|null = null;
 	
-	constructor(token:string, deviceId:number) {
+	constructor(deviceId:number) {
 		this.header = Buffer.alloc(2 + 2 + 4 + 4 + 4 + 16);
 		this.header[0] = 0x21;
 		this.header[1] = 0x31;
@@ -24,7 +24,6 @@ export class Packet {
 			this.header[i] = 0xff;
 		}
 
-		//this.token = Buffer.from(token);
 		this._token = null;
 		this.deviceId = deviceId;
 	}
@@ -186,5 +185,11 @@ export class Packet {
 
 	get stamp() {
 		return this.header.readUInt32BE(12);
+	}
+
+	clone() {
+		var clone = new Packet(this.deviceId);
+		clone.token = this.token;
+		return clone;
 	}
 }
