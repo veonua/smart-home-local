@@ -10,8 +10,9 @@ import { roboFromCommand } from "./utils";
 export class VacuumDevice {
 	onResponse(command: string, params: IVacuumCommand, result: smarthome.DataFlow.UdpResponseData): IDeviceState {
 	this.packet.updateLast(); 
-	var resp = this.decode(result.udpResponse.responsePackets)   
-	var resp_result = resp?.result
+	var resp = this.decode(result.udpResponse.responsePackets)
+	if (resp==null) {return {};}
+	var resp_result = resp.result
 
 	if (resp_result == ['ok']) {
 		switch (command) {
