@@ -32,15 +32,33 @@ export interface IModeSetting {
   }
 }
 
+export interface IOnOff {
+  on : boolean
+}
+
+export interface IFanSpeed {
+  fanSpeed : string|number
+}
+
+export interface IThermostatTemperatureSetpoint {
+  thermostatTemperatureSetpoint : number
+}
+
+export interface IThermostatMode {
+  thermostatMode : string
+}
+
+export type IAcCommand = IOnOff | IFanSpeed | IModeSetting | IThermostatTemperatureSetpoint | IThermostatMode;
+
 export type IVacuumCommand = IStartStop | IPause | ILocate | IModeSetting;
 
 export type IFanPower = 101 | 102 | 103 | 104 | 105
 
-interface IModes {
-  currentModeSettings: {
-    mode: IFanPower;
-  }
-}
+// interface IVacuumModes {
+//   currentModeSettings: {
+//     mode: IFanPower;
+//   }
+// }
 
 interface IStatus {
   battery:number,
@@ -48,9 +66,15 @@ interface IStatus {
   clean_time:number,
   dnd_enabled: 0 | 1,
   error_code: number,
-  fan_power: number,
+  fan_power: IFanPower,
   in_cleaning: 0 | 1 | 2,
+  in_returning: 0 | 1,
+  in_fresh_state: 0 | 1,
+  lab_status: 0 | 1,
+  lock_status: 0 | 1,
+  water_box_status: 0 | 1,
   map_present: 0 | 1,
+  map_status: 0 | 1 | 2 | 3
   msg_seq:number,
   msg_ver:number,
   state: 0 | 1| 2| 3| 4| 5| 6| 7| 8|9 |10|11|12|13|14|15|16|17|100
@@ -109,21 +133,27 @@ interface IStatus {
 }
 
 export interface IDeviceState {
-  isRunning? : boolean,
-  isPaused? : boolean,
-  online?: boolean;
-  generatedAlert?: boolean;
+  isRunning? : boolean
+  isPaused? : boolean
+  on? : boolean
+  currentFanSpeedSetting? : string|number
+  online?: boolean
+  generatedAlert?: boolean
+  thermostatMode?: string
+  thermostatTemperatureSetpoint?: number
+  error?: any
 }
 
 export type IVacuumState = IVacuumCommand & IDeviceState;
 
 export interface IRoboVacuumResponse {
-  id: number;
-  result: any;
+  id: number
+  result: any
+  error?: any
 }
 
 export interface IRoboVacuumCommand {
-  id: number;
+  //id: number;
   method: string;
   params?: any[];
 }
@@ -141,7 +171,10 @@ export interface IZone {
 }
 
 export interface IDeviceCustomData {
-  token: string,
+  token: string
+}
+
+export interface IVacumCustomData extends IDeviceCustomData {
   fan_power : IFanPower,
   segments?: Map<string, ISegment>,
   zones?: Map<string, IZone>,

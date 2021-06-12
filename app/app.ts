@@ -18,53 +18,25 @@ import {  IVacuumCommand,
           IStartStop,
           IDeviceState,
           IModeSetting,
+          IVacumCustomData,
           IDeviceCustomData} from "./types";
 
-import { VacuumDevice } from "./vacumdevice"
-import { fan_power } from "./utils"
+import { VacuumDevice, fan_power } from "./vacumdevice"
+import { AcPartnerDevice } from "./acdevice"
+import { IMiDevice } from "./midevice"
+
+//import * as e from "express";
 
 const RESPONSE_SLEEP = 600;
 const portNumber: number = 54321;
 
 // HomeApp implements IDENTIFY and EXECUTE handler for smarthome local device execution.
 export class HomeApp {
-  private vacuums: Record<string, VacuumDevice> = {};
+  private midevices: Record<string, IMiDevice<any>> = {};
 
   constructor(private readonly app: smarthome.App) {
       this.app = app;
   }
-
-  // public devicesHandler = (request: smarthome.IntentFlow.ReachableDevicesRequest):
-  // smarthome.IntentFlow.ReachableDevicesResponse => {
-  //   console.debug("ReachableDevices request", request);
-    
-  //   // Reference to the local proxy device
-  //   const proxyDevice = request.inputs[0].payload.device.proxyDevice;
-  //   // proxyDevice customData is json string =(
-  //   const customData = request.devices[0].customData as IDeviceCustomData;
-    
-  //   const reachableDevices = [
-  //     // Each verificationId must match one of the otherDeviceIds
-  //     // in the SYNC response
-  //     { verificationId: "roborock-vacuum-s5_miio260426251" },
-  //     { verificationId: "mop-roborock-vacuum-s5_miio260426251" },
-  //   ];
-
-  //   console.debug("ReachableDevices ", reachableDevices);
-
-  //   // Return a response
-  //   const response: smarthome.IntentFlow.ReachableDevicesResponse = {
-  //     intent: smarthome.Intents.REACHABLE_DEVICES,
-  //     requestId: request.requestId,
-  //     payload: {
-  //       devices: reachableDevices,
-  //     },
-  //   };
-
-  //   console.debug("ReachableDevices response", response);
-    
-  //   return response;
-  // };
 
   // identifyHandlers decode UDP scan data and structured device information.
   public identifyHandler = (identifyRequest: smarthome.IntentFlow.IdentifyRequest):
@@ -76,22 +48,33 @@ export class HomeApp {
     if (!device.mdnsScanData) 
       throw Error("invalid service "+name);
 
-    let mdns_name = device.mdnsScanData.serviceName // "roborock-vacuum-s5_miio260426251._miio._udp.local"
-    if (!mdns_name.endsWith("._miio._udp.local"))
-      throw Error("invalid service "+mdns_name);
+    let mdnsName = device.mdnsScanData.serviceName // "roborock-vacuum-s5_miio260426251._miio._udp.local"
+    if (!mdnsName.endsWith("._miio._udp.local"))
+      throw Error("invalid service "+mdnsName);
 
-    let parts = mdns_name.substr(0, mdns_name.length-17).split("_miio");
+    let parts = mdnsName.substr(0, mdnsName.length-17).split("_miio");
     let hwVersion = parts[0];
     let hwParts = parts[0].split("-")
+    let deviceType = hwParts[1]
     let devNumber = parseInt(parts[1]);    
     let devId = parts[1];
 
     let cloudDevice = identifyRequest.devices.filter(x=>x.id==devId)[0];
+    if (cloudDevice === undefined) {
+      new Promise((resolve) => {}) // "lumi-acpartner-v1_miio57948646._miio._udp.local"
+    }
     let customData = cloudDevice.customData as IDeviceCustomData;
 
-    if (this.vacuums[devId] === undefined) {
-      //let config = customData
-      this.vacuums[devId] = new VacuumDevice(devNumber, customData.token, customData.fan_power, customData.segments, customData.zones, customData.targets);
+    var midevice = this.midevices[devId] 
+    if (midevice === undefined) {
+      switch (deviceType) {
+        case "acpartner": midevice = new AcPartnerDevice(devNumber, customData.token, customData)
+          break;
+        case "vacuum":    midevice = new VacuumDevice(devNumber, customData.token, customData as IVacumCustomData);
+          break;
+        default: throw Error("unknown device type '" + deviceType + "' of" + mdnsName)
+      }
+      this.midevices[devId] = midevice
     }
 
     return new Promise((resolve) => {
@@ -101,7 +84,7 @@ export class HomeApp {
           payload: {
             device: {
               id: devId,
-              type: "action.devices.types.VACUUM",
+              type: midevice.type,
               deviceInfo: {
                 manufacturer: hwParts[0],
                 model: hwParts[2],
@@ -132,14 +115,13 @@ export class HomeApp {
     const executeResponse =  new smarthome.Execute.Response.Builder()
       .setRequestId(executeRequest.requestId);
   
-    // Handle light device commands for all devices.
     return Promise.all(command.devices.map(async (google_device) => {
       
       try {
-        let vacuum = this.vacuums[google_device.id];
+        let midevice = this.midevices[google_device.id];
         
         const result : IDeviceState = await promiseFromCommand(this.app.getDeviceManager(), executeRequest.requestId, google_device.id, 
-        vacuum, execution.command, (execution.params as IVacuumCommand));
+        midevice, execution.command, (execution.params as IVacuumCommand));
 
         executeResponse.setSuccessState(google_device.id, result);
       }
@@ -161,72 +143,82 @@ function _sleep(ms: number) {
 }
 
 export async function promiseFromCommand(deviceManager:smarthome.DeviceManager, requestId: string, deviceId: string,
-        device:VacuumDevice,
+        device: IMiDevice<any>,
         command: string, params: IVacuumCommand) : Promise<IDeviceState> {
         
   if (device.needsHandshake) {
-    const handshakeCommand = new smarthome.DataFlow.UdpRequestData();
-    handshakeCommand.requestId = requestId;
-    handshakeCommand.deviceId = deviceId;
-    handshakeCommand.port = portNumber;
-    handshakeCommand.data = "21310020ffffffffffffffffffffffffffffffffffffffffffffffffffffffff";
-    handshakeCommand.expectedResponsePackets = 1;
-    
     const handshake : Promise<void> = deviceManager
-          .send(handshakeCommand)
+          .send(device.makeHandshakeCommand(requestId, portNumber))
           .then((result: smarthome.DataFlow.CommandSuccess) => {
             const udpResult = result as smarthome.DataFlow.UdpResponseData;
-            const response = udpResult.udpResponse.responsePackets?[0]:""; // 21310020000000000F85CA0B5F183C88FFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFF
+
             console.log("handshake result", udpResult);
-            const device_hex = ("00000000" + device.deviceId.toString(16)).substr(-8);
-            device.packet.raw = Buffer.from("2131002000000000" + device_hex + "5d53e8ab" + device.token, "hex");            
+            let response = ""
+            if (udpResult.udpResponse.responsePackets) {
+              response = udpResult.udpResponse.responsePackets[0];
+              // 21310020000000000F85CA0B5F183C88FFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFF
+              // 2131002000000000037439E600013E6A00000000000000000000000000000000
+            } 
+            
+            if (!response) {
+              const device_hex = ("00000000" + device.deviceId.toString(16)).substr(-8);
+              response = "2131002000000000" + device_hex + "5d53e8ab" + device.token
+            }
+            
+            device.onHandshake(response)            
           })
 
     console.debug("sending hanshake...");
     await handshake
     await _sleep(RESPONSE_SLEEP);
-  }
 
-  // const statusRequest = sendRequest(deviceManager, requestId, deviceId, device.convert("action.devices.QUERY", params))
-  // .then ((result) => {
-  //           console.log("status result", result);
-  //           //p.raw = Buffer.from("FF", "hex"); //result.data;
-  //           let data = {}
-  //           // if (result.data) {
-  //           //   data = JSON.parse(p.data.toString());
-  //           // } else {
-  //             data = {state:5}
-  //           // }
-  //           return (data as IStatus);
-  //         }
-  // )
+    ////////////
+    if (!device.initialized) {
+      const init_request = sendRequest(deviceManager, requestId, deviceId, device.convert("action.devices.QUERY", "") )
+          .then((result: smarthome.DataFlow.UdpResponseData) => {
+            console.log("EXECUTE init", result);
+            device.onInit(result)
+          })
+
+      await init_request
+      await _sleep(RESPONSE_SLEEP);
+    }
+    //////////////
+  }
   
-  // console.debug("fetching status...");
-  // let status = await statusRequest;
-  // await _sleep(RESPONSE_SLEEP);
-  device.status = { state:5 } as IStatus
-  
-  let res = await sendRequest(deviceManager, requestId, deviceId, device.convert(command, params) )
+
+  var res = await sendRequest(deviceManager, requestId, deviceId, device.convert(command, params) )
         .then((result: smarthome.DataFlow.UdpResponseData) => {
           console.log("EXECUTE result", result);
           return device.onResponse(command, params, result)
         })
 
-  switch (command) {
-    case "action.devices.commands.SetModes": {
-      device.fan_power = fan_power( (params as IModeSetting).updateModeSettings.mode )
-      break;
-    }
-
-    case "action.devices.commands.StartStop": {
-      const new_mode = device.resetModeIfNeed((params as IStartStop))
-      if (new_mode) {
-        await _sleep(RESPONSE_SLEEP);
-        await sendRequest(deviceManager, requestId, deviceId, device.convert_fan_power(new_mode))
+  if (device instanceof AcPartnerDevice) {
+    res = await sendRequest(deviceManager, requestId, deviceId, device.convert("action.devices.QUERY", undefined) )
           .then((result: smarthome.DataFlow.UdpResponseData) => {
-          console.log("EXECUTE set default mode ", result);
-          var resp = device.decode(result.udpResponse.responsePackets)
-        })
+            console.log("EXECUTE after", result);
+            return device.onResponse("action.devices.QUERY", undefined, result)
+          })
+  }
+
+  if (device instanceof VacuumDevice) {
+    device.status = { state:5 } as IStatus
+    switch (command) {
+      case "action.devices.commands.SetModes": {
+        device.fan_power = fan_power( (params as IModeSetting).updateModeSettings.mode )
+        break;
+      }
+
+      case "action.devices.commands.StartStop": {
+        const new_mode = device.resetModeIfNeed((params as IStartStop))
+        if (new_mode) {
+          await _sleep(RESPONSE_SLEEP);
+          await sendRequest(deviceManager, requestId, deviceId, device.convert_fan_power(new_mode))
+            .then((result: smarthome.DataFlow.UdpResponseData) => {
+            console.log("EXECUTE set default mode ", result);
+            var resp = device.decode(result.udpResponse.responsePackets)
+          })
+        }
       }
     }
   }

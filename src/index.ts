@@ -75,7 +75,7 @@ async function getUserIdOrThrow(headers: Headers): Promise<string> {
 
 function empty_map() {
   var seg : any = {}
-  for (var i=1; i<=30; i++) {
+  for (var i=1; i<=50; i++) {
     seg['room '+i] = {'segments' : [i]}
   }
 
@@ -120,35 +120,35 @@ app.onSync(async (body, headers) => {
         }]
       },
       {
-      setting_name: "low",
-      setting_values: [{
-        setting_synonym: ["low", "quiet", "silent", "min"],
-        lang: "en"
-       }]
-     },
-     {
-      setting_name: "balanced",
-      setting_values: [{
-        setting_synonym: ["balanced", "normal"],
-        lang: "en"
-       }]
-     },
-     {
-      setting_name: "high",
-      setting_values: [{
-        setting_synonym: ["high", "full"],
-        lang: "en"
-       }]
-     },
-     {
-      setting_name: "Turbo_On",
-      setting_values: [{
-        setting_synonym: ["turbo", "max", "performance", "high demand", "demand"],
-        lang: "en"
-       }]
-     }
-     ],
-     ordered: true
+        setting_name: "low",
+        setting_values: [{
+          setting_synonym: ["low", "quiet", "silent", "min"],
+          lang: "en"
+        }]
+      },
+      {
+        setting_name: "balanced",
+        setting_values: [{
+          setting_synonym: ["balanced", "normal"],
+          lang: "en"
+        }]
+      },
+      {
+        setting_name: "high",
+        setting_values: [{
+          setting_synonym: ["high", "full"],
+          lang: "en"
+        }]
+      },
+      {
+        setting_name: "Turbo_On",
+        setting_values: [{
+          setting_synonym: ["turbo", "max", "performance", "high demand", "demand"],
+          lang: "en"
+        }]
+      }
+      ],
+      ordered: true
   };
 
   var id=0;
@@ -401,7 +401,7 @@ expressApp.post('/smarthome/delete', async (req, res) => {
 })
 
 
-expressApp.get('/local/', function (req, res) {
+expressApp.get('/local.html', function (req, res) {
   res.sendFile(__dirname + '/index.html');
 })
 

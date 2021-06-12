@@ -4,7 +4,7 @@
 
 import { createCipheriv, createHash, createDecipheriv } from "crypto";
 
-const OFFSET = -1;  
+const OFFSET = 10;  
 
 export class Packet {
 	public header: Buffer;
@@ -13,7 +13,10 @@ export class Packet {
 	private _tokenKey: Buffer | null = null;
 	private _tokenIV: Buffer | null = null;
 	private lastResponse: number = 0;
+	public msgCounter = 1;
 	public data: Buffer|null = null;
+	private _serverStamp: number = 0;
+	private _serverStampTime: number = 0;
 	
 	constructor(deviceId:number) {
 		this.header = Buffer.alloc(2 + 2 + 4 + 4 + 4 + 16);
@@ -75,12 +78,12 @@ export class Packet {
 			this.header.writeUInt32BE(this.deviceId, 8)
 
 			// Update the stamp to match server
-			// if (false && this._serverStampTime) {
-			// 	const secondsPassed = (Date.now() - this._serverStampTime);
-			// 	this.header.writeUInt32BE( Math.floor( (this._serverStampTime + secondsPassed)/1000), 12);
-			// } else {
-			this.header.writeUInt32BE(Math.floor(Date.now()/1000) + OFFSET, 12);
-			// }
+			if (this._serverStampTime) {
+				const secondsPassed = (Date.now() - this._serverStampTime)/1000;
+				this.header.writeUInt32BE( Math.floor(this._serverStamp + secondsPassed + OFFSET), 12);
+			} else {
+				this.header.writeUInt32BE(Math.floor(Date.now()/1000) + OFFSET, 12);
+			}
 
 			// Encrypt the data
 			let cipher = createCipheriv('aes-128-cbc', this._tokenKey, this._tokenIV);
@@ -121,12 +124,12 @@ export class Packet {
 		msg.copy(this.header, 0, 0, 32);
 		this.debug('<- ', this.header);
 
-		//const stamp = this.stamp;
-		//if(stamp > 0) {
+		const stamp = this.stamp;
+		if(stamp > 0) {
 			// If the device returned a stamp, store it
-			//this._serverStamp = this.stamp;
-			//this._serverStampTime = Date.now();
-		//}
+			this._serverStamp = this.stamp;
+			this._serverStampTime = Date.now();
+		}
 
 		const encrypted = msg.slice(32);
 
@@ -156,6 +159,7 @@ export class Packet {
 			this.data = null;
 		} else {
 			let decipher = createDecipheriv('aes-128-cbc', this._tokenKey, this._tokenIV);
+			//decipher.setAutoPadding(false);
 			this.data = Buffer.concat([
 				decipher.update(encrypted),
 				decipher.final()
