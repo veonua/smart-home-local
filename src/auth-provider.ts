@@ -20,8 +20,8 @@
 import * as express from 'express'
 import * as util from 'util'
 import { Headers } from 'actions-on-google'
-import { UploadedFile } from 'express-fileupload';
-import { loadFlole } from './flole';
+import { UploadedFile } from 'express-fileupload'
+import { loadFlole } from './flole'
 
 
 //import * as Firestore from './firestore'
@@ -54,18 +54,19 @@ export async function registerAuthEndpoints(expressApp: express.Express) {
 
   expressApp.post('/login', async (req, res) => {
     if (req.files === undefined)
-      return res.redirect("/login?no_file");
+      return res.redirect('/login?no_file');
     
     const file = (req.files.file1 as UploadedFile)
-    if (file === undefined) { return res.redirect("/login?no_file") }
+    if (file === undefined) { 
+      return res.redirect('/login?no_file') }
     let floleAll = loadFlole(file.data)
-    let fl = floleAll[floleAll.length - 1]
+    const fl = floleAll[floleAll.length - 1]
 
     const deviceId = ("00000000" + fl.d.toString(16)).substr(-8);
     const code = fl.e + "_" + deviceId + "_" + fl.h
 
     const responseurl = util.format('%s?code=%s&state=%s',
-      decodeURIComponent(req.query.redirect_uri), code,
+      decodeURIComponent(req.query.redirect_uri as string), code,
       req.query.state)
     //console.log(responseurl)
     
@@ -78,7 +79,7 @@ export async function registerAuthEndpoints(expressApp: express.Express) {
 
   expressApp.get('/fakeauth', async (req, res) => {
     const responseurl = util.format('%s?code=%s&state=%s',
-      decodeURIComponent(req.query.redirect_uri), 'xxxxxx',
+      decodeURIComponent(req.query.redirect_uri as string), 'xxxxxx',
       req.query.state)
     console.log(responseurl)
     return res.redirect(responseurl)

@@ -17,38 +17,46 @@ import {  IVacuumCommand,
           IStatus,
           IStartStop,
           IDeviceState,
+          IErrorState,
           IModeSetting,
           IVacumCustomData,
-          IDeviceCustomData} from "./types";
+          IDeviceCustomData,
+          IAcCommand,
+          ISuccessState} from "./types";
 
 import { VacuumDevice, fan_power } from "./vacumdevice"
 import { AcPartnerDevice } from "./acdevice"
 import { IMiDevice } from "./midevice"
 
-//import * as e from "express";
+interface DeviceStatesMap {
+  // tslint:disable-next-line
+  [key: string]: any
+}
 
-const RESPONSE_SLEEP = 600;
+const RESPONSE_SLEEP = 500;
 const portNumber: number = 54321;
 
 // HomeApp implements IDENTIFY and EXECUTE handler for smarthome local device execution.
 export class HomeApp {
-  private midevices: Record<string, IMiDevice<any>> = {};
+  private midevices: Record<string, IMiDevice<any, any>> = {};
 
   constructor(private readonly app: smarthome.App) {
       this.app = app;
   }
 
   // identifyHandlers decode UDP scan data and structured device information.
-  public identifyHandler = (identifyRequest: smarthome.IntentFlow.IdentifyRequest):
+  public identifyHandler = async(identifyRequest: smarthome.IntentFlow.IdentifyRequest):
     Promise<smarthome.IntentFlow.IdentifyResponse> => {
     console.log("IDENTIFY request", identifyRequest);
       
     const device = identifyRequest.inputs[0].payload.device;
     
     if (!device.mdnsScanData) 
-      throw Error("invalid service "+name);
+      throw Error("invalid service "+device.id);
 
-    let mdnsName = device.mdnsScanData.serviceName // "roborock-vacuum-s5_miio260426251._miio._udp.local"
+    const scanData = device.mdnsScanData as smarthome.IntentFlow.MdnsScanData;
+      
+    let mdnsName = scanData.serviceName // "roborock-vacuum-s5_miio260426251._miio._udp.local"
     if (!mdnsName.endsWith("._miio._udp.local"))
       throw Error("invalid service "+mdnsName);
 
@@ -61,8 +69,16 @@ export class HomeApp {
 
     let cloudDevice = identifyRequest.devices.filter(x=>x.id==devId)[0];
     if (cloudDevice === undefined) {
-      new Promise((resolve) => {}) // "lumi-acpartner-v1_miio57948646._miio._udp.local"
-    }
+      return  {
+        requestId: identifyRequest.requestId,
+        intent: smarthome.Intents.IDENTIFY,
+        payload: {
+          device: {
+            id: devId,
+          }
+        }
+      }; // "lumi-acpartner-v1_miio57948646._miio._udp.local"
+    };
     let customData = cloudDevice.customData as IDeviceCustomData;
 
     var midevice = this.midevices[devId] 
@@ -77,36 +93,97 @@ export class HomeApp {
       this.midevices[devId] = midevice
     }
 
-    return new Promise((resolve) => {
-      const identifyResponse = {
-          intent: smarthome.Intents.IDENTIFY,
-          requestId: identifyRequest.requestId,
-          payload: {
-            device: {
-              id: devId,
-              type: midevice.type,
-              deviceInfo: {
-                manufacturer: hwParts[0],
-                model: hwParts[2],
-                hwVersion: hwVersion,
-                swVersion: "3.3.9_001864",
-              },
-              isProxy: false,
-              verificationId: devId,
-            }
-          },
-        };
-        console.log("IDENTIFY response", identifyResponse);
-        resolve(identifyResponse);
-    });
+    const identifyResponse: smarthome.IntentFlow.IdentifyResponse = {
+        requestId: identifyRequest.requestId,
+        intent: smarthome.Intents.IDENTIFY,
+        payload: {
+          device: {
+            id: devId,
+            type: midevice.type,
+            deviceInfo: {
+              manufacturer: hwParts[0],
+              model: hwParts[2],
+              hwVersion: hwVersion,
+              swVersion: "3.3.9_001864",
+            },
+            isProxy: false,
+            verificationId: devId,
+          }
+        },
+      };
+      console.log("IDENTIFY response", identifyResponse);
+    return identifyResponse;
   }
 
+  public reachableDevicesHandler = async(
+    reachableDevicesRequest: smarthome.IntentFlow.ReachableDevicesRequest):
+    Promise<smarthome.IntentFlow.ReachableDevicesResponse> => {
+      // I don't know what is it
+      console.log(`REACHABLE_DEVICES request ${
+          JSON.stringify(reachableDevicesRequest, null, 2)}`);
+
+      const proxyDeviceId =
+          reachableDevicesRequest.inputs[0].payload.device.id;
+          
+      const devices = reachableDevicesRequest.inputs.flatMap((d) => {
+        const customData = d.payload.device.customData as IDeviceCustomData;
+        //if (customData.proxy === proxyDeviceId) {
+        //  return [{verificationId: `${proxyDeviceId}-${customData.channel}`}];
+        //}
+        return [];
+      });
+      const reachableDevicesResponse = {
+        intent: smarthome.Intents.REACHABLE_DEVICES,
+        requestId: reachableDevicesRequest.requestId,
+        payload: {
+          devices,
+        },
+      };
+      console.log(`REACHABLE_DEVICES response ${
+          JSON.stringify(reachableDevicesResponse, null, 2)}`);
+      return reachableDevicesResponse;
+    }
+  
+  public queryHandler = async (queryRequest: smarthome.IntentFlow.QueryRequest): 
+    Promise<smarthome.IntentFlow.QueryResponse> => {
+      const payload = queryRequest.inputs[0].payload;
+      console.log('QUERY request', payload);
+
+      const deviceStates: DeviceStatesMap = {}
+      await Promise.all(payload.devices.map(async (google_device) => {
+        let midevice = null
+        try {
+          midevice = this.midevices[google_device.id];
+  
+          deviceStates[google_device.id] = await promiseFromQuery(this.app.getDeviceManager(), queryRequest.requestId, google_device.id,
+            midevice);
+        }
+        catch (e) {
+          console.error(e);
+          deviceStates[google_device.id] = midevice?.cachedQuery ?? { customData: e.errorCode };
+        }
+      }));
+      
+      let queryResponse : smarthome.IntentFlow.QueryResponse = {
+        requestId: queryRequest.requestId,
+        payload: {
+          devices: deviceStates
+        }
+      }
+      
+      //console.log("Query response", queryResponse);
+      return queryResponse;
+    }
+  
+
   // executeHandler send openpixelcontrol messages corresponding to light device commands.
-  public executeHandler = (executeRequest: smarthome.IntentFlow.ExecuteRequest):
+  public executeHandler = async (executeRequest: smarthome.IntentFlow.ExecuteRequest):
     Promise<smarthome.IntentFlow.ExecuteResponse> => {
-    console.log("EXECUTE request:", executeRequest);
+      
     // TODO(proppy): handle multiple inputs/commands.
     const command = executeRequest.inputs[0].payload.commands[0];
+    console.log('EXECUTE request:', command);
+
     // TODO(proppy): handle multiple executions.
     const execution = command.execution[0];
 
@@ -115,26 +192,29 @@ export class HomeApp {
     const executeResponse =  new smarthome.Execute.Response.Builder()
       .setRequestId(executeRequest.requestId);
   
-    return Promise.all(command.devices.map(async (google_device) => {
-      
+    await Promise.all(command.devices.map(async (google_device) => {
       try {
         let midevice = this.midevices[google_device.id];
-        
-        const result : IDeviceState = await promiseFromCommand(this.app.getDeviceManager(), executeRequest.requestId, google_device.id, 
-        midevice, execution.command, (execution.params as IVacuumCommand));
 
-        executeResponse.setSuccessState(google_device.id, result);
+        const result: IDeviceState = await promiseFromCommand(this.app.getDeviceManager(), executeRequest.requestId, google_device.id,
+          midevice, execution.command, (execution.params as IVacuumCommand));
+        
+        if (result.status=='SUCCESS')
+          executeResponse.setSuccessState(google_device.id, result);
+        else {
+          let e = result as IErrorState;
+          console.error("EXECUTE failed",e, google_device);
+          executeResponse.setErrorState(google_device.id, e.errorCode);
+        }
       }
       catch (e) {
         console.error(e);
         executeResponse.setErrorState(google_device.id, e.errorCode);
       }
 
-    }))
-    .then(() => {
-      console.log("EXECUTE response", executeResponse);
-      return executeResponse.build();
-    });
+    }));
+    console.log("EXECUTE response", executeResponse);
+    return executeResponse.build();
   }
 }
 
@@ -142,12 +222,8 @@ function _sleep(ms: number) {
   return new Promise((resolve) => setTimeout(resolve, ms));
 }
 
-export async function promiseFromCommand(deviceManager:smarthome.DeviceManager, requestId: string, deviceId: string,
-        device: IMiDevice<any>,
-        command: string, params: IVacuumCommand) : Promise<IDeviceState> {
-        
-  if (device.needsHandshake) {
-    const handshake : Promise<void> = deviceManager
+async function sendHandshake(deviceManager:smarthome.DeviceManager, requestId: string, device: IMiDevice<any, any>) {
+  const handshake : Promise<void> = deviceManager
           .send(device.makeHandshakeCommand(requestId, portNumber))
           .then((result: smarthome.DataFlow.CommandSuccess) => {
             const udpResult = result as smarthome.DataFlow.UdpResponseData;
@@ -168,24 +244,45 @@ export async function promiseFromCommand(deviceManager:smarthome.DeviceManager, 
             device.onHandshake(response)            
           })
 
-    console.debug("sending hanshake...");
     await handshake
     await _sleep(RESPONSE_SLEEP);
+}
 
-    ////////////
-    if (!device.initialized) {
-      const init_request = sendRequest(deviceManager, requestId, deviceId, device.convert("action.devices.QUERY", "") )
-          .then((result: smarthome.DataFlow.UdpResponseData) => {
-            console.log("EXECUTE init", result);
-            device.onInit(result)
-          })
-
-      await init_request
-      await _sleep(RESPONSE_SLEEP);
-    }
-    //////////////
+export async function promiseFromQuery(deviceManager:smarthome.DeviceManager, requestId: string, deviceId: string,
+  device: IMiDevice<any, any>, noCache:boolean = false) {
+  if (device.needsHandshake) {
+      await sendHandshake(deviceManager, requestId, device)
   }
-  
+
+  if (!noCache) {
+    const cache = device.cachedQuery
+    if (cache) {
+      console.info("QUERY cached", cache)
+      return cache
+    }
+  }
+
+  return await sendRequest(deviceManager, requestId, deviceId, device.convert(smarthome.Intents.QUERY, undefined) )
+          .then((result: smarthome.DataFlow.UdpResponseData) => {
+            let res = device.onResponse(smarthome.Intents.QUERY, undefined, result)
+            console.log("QUERY response", res);
+            return res
+          })
+}
+
+export async function promiseFromCommand(deviceManager:smarthome.DeviceManager, requestId: string, deviceId: string,
+        device: IMiDevice<any, any>,
+        command: string, params: IVacuumCommand|IAcCommand) : Promise<IDeviceState> {
+        
+  if (device.needsHandshake) {
+    if (!device.initialized) {
+      //////////// Query should initialise the device before. so never should be happening
+      console.warn("force QUERY");
+      await promiseFromQuery(deviceManager, requestId, deviceId, device, true)
+    } else {
+      await sendHandshake(deviceManager, requestId, device)
+    }
+  }
 
   var res = await sendRequest(deviceManager, requestId, deviceId, device.convert(command, params) )
         .then((result: smarthome.DataFlow.UdpResponseData) => {
@@ -193,12 +290,13 @@ export async function promiseFromCommand(deviceManager:smarthome.DeviceManager, 
           return device.onResponse(command, params, result)
         })
 
+  if (res.status!="SUCCESS") {
+    return res
+  }
+
   if (device instanceof AcPartnerDevice) {
-    res = await sendRequest(deviceManager, requestId, deviceId, device.convert("action.devices.QUERY", undefined) )
-          .then((result: smarthome.DataFlow.UdpResponseData) => {
-            console.log("EXECUTE after", result);
-            return device.onResponse("action.devices.QUERY", undefined, result)
-          })
+      await _sleep(RESPONSE_SLEEP);    
+      res = await promiseFromQuery(deviceManager, requestId, deviceId, device, true)
   }
 
   if (device instanceof VacuumDevice) {
@@ -216,7 +314,11 @@ export async function promiseFromCommand(deviceManager:smarthome.DeviceManager, 
           await sendRequest(deviceManager, requestId, deviceId, device.convert_fan_power(new_mode))
             .then((result: smarthome.DataFlow.UdpResponseData) => {
             console.log("EXECUTE set default mode ", result);
-            var resp = device.decode(result.udpResponse.responsePackets)
+            try {
+              device.decode(result.udpResponse.responsePackets)
+            } catch (e) {
+              console.error("set default mode", e)
+            }
           })
         }
       }

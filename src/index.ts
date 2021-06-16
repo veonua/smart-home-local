@@ -52,7 +52,7 @@ expressApp.set('trust proxy', 1)
 Auth.registerAuthEndpoints(expressApp)
 
 
-let jwt = require('./smart-home-key.json')
+const jwt = require('./smart-home-key.json')
 
 const app = smarthome({
   jwt,
@@ -76,12 +76,12 @@ async function getUserIdOrThrow(headers: Headers): Promise<string> {
 function empty_map() {
   var seg : any = {}
   for (var i=1; i<=50; i++) {
-    seg['room '+i] = {'segments' : [i]}
+    seg['room '+i] = { segments : [i]}
   }
 
-  return {'segments':seg, 
-          'fan_power':101,
-          "targets" : { "service": [22500,25500] }
+  return {segments: seg, 
+          fan_power: 101,
+          targets : { service: [22500,25500] },
         }
 }
 
@@ -101,85 +101,171 @@ function extract_zones(map:any): string[] {
   return res
 }
 
+function lumiAcPartner(deviceId:string) : SmartHomeV1SyncDevices {
+  /*
+      commandOnlyOnOff: false,
+      commandOnlyFanSpeed: false,
+      commandOnlyTemperatureSetting: false,
+  */
+  return {
+    type: 'action.devices.types.THERMOSTAT',
+    traits: [
+        'action.devices.traits.FanSpeed',
+        'action.devices.traits.TemperatureSetting'
+    ],
+    id: deviceId,
+    otherDeviceIds: [{
+      deviceId: deviceId,
+    }],
+    name: {
+      name: "lumi-acpartner",
+      defaultNames: ['Air Conditioner'],
+      nicknames: ['Toshiba AC'],
+    },
+    willReportState: true,
+    attributes: {
+      availableThermostatModes: ['cool','dry','heat','eco','fan-only', 'off', 'on'],
+      commandOnlyOnOff: false,
+      commandOnlyFanSpeed: false,
+      commandOnlyTemperatureSetting: false,
+      queryOnlyTemperatureSetting: false,
+      thermostatTemperatureUnit: 'C',
+      thermostatTemperatureRange: {
+        minThresholdCelsius: 17,
+        maxThresholdCelsius: 30
+      },
+      availableFanSpeeds: {
+        speeds: [
+          {
+            speed_name: '0',
+            speed_values: [
+              {
+                speed_synonym: ['Low', 'speed 1'],
+                lang: 'en'
+              }
+            ]
+          },
+          {
+            speed_name: '1',
+            speed_values: [
+              {
+                speed_synonym: ['Medium', 'speed 2'],
+                lang: 'en'
+              }
+            ]
+          },
+          {
+            speed_name: '2',
+            speed_values: [
+              {
+                speed_synonym: ['High','speed 3'],
+                lang: 'en'
+              }
+            ]
+          },
+          {
+            speed_name: '3',
+            speed_values: [
+              {
+                speed_synonym: ['Auto','auto speed'],
+                lang: 'en'
+              }
+            ]
+          }
+        ],
+        ordered: true
+      }
+    },
+    deviceInfo: {
+      manufacturer: 'Aqara',
+      model: 'lumi.acpartner.v1',
+      hwVersion: 'MW300',
+      swVersion: '1.4.1_157'
+    },
+    customData: {
+      token: 'e53f67a46ac37d497588adc897c93844',
+    },
+  }
+}
+
 app.onSync(async (body, headers) => {
-  const token_device = (await getUserIdOrThrow(headers)).split('_')
+  const tokenDevice = (await getUserIdOrThrow(headers)).split('_')
   const devices: SmartHomeV1SyncDevices[] = []
   
   const mode_fan = {
-    name: "mode",
+    name: 'mode',
     name_values: [{
       name_synonym: ["mode", "power", "level", "suction"],
       lang: "en"
     }],
     settings: [
       {
-        setting_name: "mop the floor",
+        setting_name: '105',
         setting_values: [{
-          setting_synonym: ["mop the floor", "mop"],
-          "lang": "en"
-        }]
+          setting_synonym: ["Mopping", "mop the floor"],
+          lang: "en"
+        }],
       },
       {
-        setting_name: "low",
+        setting_name: '101',
         setting_values: [{
-          setting_synonym: ["low", "quiet", "silent", "min"],
+          setting_synonym: ["Low", "quiet", "silent", "min"],
           lang: "en"
-        }]
+        }],
       },
       {
-        setting_name: "balanced",
+        setting_name: '102',
         setting_values: [{
-          setting_synonym: ["balanced", "normal"],
+          setting_synonym: ["Balanced", "normal"],
           lang: "en"
-        }]
+        }],
       },
       {
-        setting_name: "high",
+        setting_name: '103',
         setting_values: [{
-          setting_synonym: ["high", "full"],
+          setting_synonym: ["High", "full"],
           lang: "en"
-        }]
+        }],
       },
       {
-        setting_name: "Turbo_On",
+        setting_name: '104',
         setting_values: [{
-          setting_synonym: ["turbo", "max", "performance", "high demand", "demand"],
+          setting_synonym: ["Turbo", "max"],
           lang: "en"
-        }]
+        }],
       }
       ],
       ordered: true
   };
 
-  var id=0;
+  let id=0;
 
   //for (let fl of flole_config) {
     id++;
-    
-    const deviceNo = token_device[1]
+    const deviceNo = tokenDevice[1]
     const deviceId = ""+parseInt(deviceNo, 16)  // "roborock-vacuum-s5_miio"+ mdnsname: roborock-vacuum-s5_miio260426251._miio._udp.local
     
     console.log("Sync '"+deviceId+"'")
     let customData : any = {}
     if (deviceId in maps){
-      console.log("loading map...")
+      console.log('loading map...')
       customData = maps[deviceId]
     } else {
       console.log("can not find the map, send default")
       customData = empty_map()
     }
     let availableZones = extract_zones(customData)
-    customData.token = token_device[0]; //flole_config[0].e
-
+    customData.token = tokenDevice[0]; //flole_config[0].e
     
     const vacuum: SmartHomeV1SyncDevices = {
       id: deviceId,
       type: "action.devices.types.VACUUM",
       traits: [
-        'action.devices.traits.StartStop',
-        'action.devices.traits.Modes',
-        'action.devices.traits.Locator',
-        'action.devices.traits.Dock'
+        "action.devices.traits.StartStop",
+        "action.devices.traits.Modes",
+        "action.devices.traits.Locator",
+        "action.devices.traits.EnergyStorage",
+        "action.devices.traits.Dock",
       ],
       name: {
         defaultNames: ["Roborock"],
@@ -188,6 +274,7 @@ app.onSync(async (body, headers) => {
       },
       attributes: {
         pausable: true,
+        queryOnlyEnergyStorage: true,
         availableModes: [
           mode_fan
         ],
@@ -204,6 +291,10 @@ app.onSync(async (body, headers) => {
       otherDeviceIds: [{deviceId: deviceId}], // local execution
     }
     devices.push(vacuum)
+    if (deviceId=="260426251") {
+      // hack: add AC
+      devices.push(lumiAcPartner("57948646"))
+    }
 
     // id++;    
     // const mop : SmartHomeV1SyncDevices = {
@@ -255,16 +346,23 @@ app.onQuery(async (body, headers) => {
   const deviceStates: DeviceStatesMap = {}
   const {devices} = body.inputs[0].payload
   await asyncForEach(devices, async (device: {id: string}) => {
-    deviceStates[device.id] = {
-      "online": true,
-      "isDocked": true,
-      "isPaused": false,
-      "isRunning": false,
-      "currentModeSettings": {
-        "mode": "balanced"
-      },
-      "activeZones" : []
-    } //states
+    if (device.id == '57948646') {
+      deviceStates[device.id] = {
+        status: "SUCCESS",
+        online: true,
+        thermostatMode: "cool",
+        thermostatTemperatureSetpoint: 23,
+        thermostatTemperatureAmbient: 25.1,
+      }
+    } else {
+      deviceStates[device.id] = {
+        online: true,
+        currentModeSettings: {
+          mode: '102'
+        },
+        activeZones : []
+      }
+    }
   })
   return {
     requestId: body.requestId,
@@ -289,22 +387,21 @@ app.onExecute(async (body, headers) => {
       const command = execution[0].command;
 
       let states : StatesMap = {
-        "online": true,
-        "isDocked": true,
-        "isPaused": false,
-        "isRunning": false,
-        "currentModeSettings": {
-          "mode": "balanced"
+        online: true,
+        currentModeSettings: {
+          mode: 102
         },
-        "activeZones" : []
+        activeZones : [],
+        descriptiveCapacityRemaining: "HIGH",
+        capacityRemaining: [
+          {
+            unit: "PERCENTAGE",
+            rawValue: 90
+          }
+        ]
       }
       
-      if (command == 'action.devices.commands.Locate') {
-        // "params": {
-        //   "lang": "en",
-        //   "ringLocally": false,
-        //   "silence": false
-        // }
+      if (command === 'action.devices.commands.Locate') {
         states = {generatedAlert: true}
       }
 
@@ -330,8 +427,8 @@ app.onExecute(async (body, headers) => {
         ids: [device.id],
         status: 'ERROR',
         errorCode: e.message,
-        debugString: "err: " + e
-      }) 
+        debugString: 'err: ' + e,
+      })
     }
   })
 
@@ -402,11 +499,11 @@ expressApp.post('/smarthome/delete', async (req, res) => {
 
 
 expressApp.get('/local.html', function (req, res) {
-  res.sendFile(__dirname + '/index.html');
+  res.sendFile(__dirname + '/index.html')
 })
 
 expressApp.get('/bundle.js', function (req, res) {
-  res.sendFile(__dirname + '/bundle.js');
+  res.sendFile(__dirname + '/bundle.js')
 })
 
 

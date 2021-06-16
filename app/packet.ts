@@ -40,14 +40,14 @@ export class Packet {
 	}
 
 	handleHandshakeReply() {
-		if(this._token === null) {
-			const token = this.checksum;
-			if(token.toString('hex').match(/^[fF0]+$/)) {
-				// Device did not return its token so we set our token to null
-				this._token = null;
-			} else {
-				this.token = this.checksum;
-			}
+		if(this._token != null) { return }
+		
+		const token = this.checksum;
+		if(token.toString('hex').match(/^[fF0]+$/)) {
+			// Device did not return its token so we set our token to null
+			this._token = null;
+		} else {
+			this.token = token;
 		}
 	}
 

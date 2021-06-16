@@ -19,6 +19,7 @@ const smarthomeApp: smarthome.App = new smarthome.App("0.0.1");
 const homeApp = new HomeApp(smarthomeApp);
 
 smarthomeApp
+    .onQuery(homeApp.queryHandler)
     .onExecute(homeApp.executeHandler)
     .onIdentify(homeApp.identifyHandler)
     .listen()

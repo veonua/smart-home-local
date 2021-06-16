@@ -1,4 +1,4 @@
-import { IAcCommand, IDeviceState, IOnOff, IFanSpeed, IThermostatTemperatureSetpoint, IThermostatMode} from "./types"
+import { IAcCommand, IDeviceState, IOnOff, IFanSpeed, IThermostatTemperatureSetpoint, IThermostatMode, ISuccessState} from "./types"
 import { IMiDevice } from "./midevice";
 
 
@@ -11,7 +11,15 @@ interface IVolatileAC {
 	swingMode?: number;
 }
 
-export class AcPartnerDevice extends IMiDevice<IAcCommand> {
+interface IAcState extends ISuccessState {
+	currentFanSpeedSetting? : string|number
+	activeThermostatMode?: string
+	thermostatMode?: string
+	thermostatTemperatureAmbient?: number
+	thermostatTemperatureSetpoint?: number
+}
+
+export class AcPartnerDevice extends IMiDevice<IAcCommand, IAcState> {
 	state?: Buffer;
 	load_power: number = 0;
 	model?: { raw: Buffer; 
@@ -28,33 +36,29 @@ export class AcPartnerDevice extends IMiDevice<IAcCommand> {
 	swingMode: number = 0;
 	prefix: any;
 	suffix: any;
+	error_codes = {
+		'-1': "transientError",
+		'-5005': "lockedToRange"
+	};
 	
 	opModeString() {
-		switch (this.opMode) {
-			case 0: 
-				return 'heat';
-			case 1:
-				return 'cool';
-			case 2:
-				return 'auto';
-			case 3:
-				return 'dry';
-			case 4:
-				return 'wind';    
-			};
+		if (!this.power) {
+			return 'off'
+		}
+		const modes = ['heat', 'cool', 'eco', 'dry', 'fan-only']
+		return modes[this.opMode]
 	}
+
 	
-	fanSpeedString() {
-		switch (this.fanSpeed) {
-			case 0:
-				return 'low';
-			case 1:
-				return 'medium';
-			case 2:
-				return 'high';
-			case 3:
-				return 'auto';                
-			};
+	parseThermostatMode (val:IThermostatMode) {
+		switch (val.thermostatMode) {
+			case 'heat': return 0
+			case 'cool': return 1
+			case 'auto': return 2
+			case 'eco': return 2
+			case 'dry': return 3
+			case 'fan-only': return 4 
+		};
 	}
 
 	swingModeString() {
@@ -78,19 +82,21 @@ export class AcPartnerDevice extends IMiDevice<IAcCommand> {
 		super("action.devices.types.AC_UNIT", deviceId, token)
 	}
 	
-	onResponseImpl(command: string, params: IAcCommand, resp_result: any): IDeviceState {
+	onResponseImpl(command: string, params: IAcCommand, resp_result: any): IAcState {
 		switch (command) {
-			case "action.devices.QUERY" :
+			case smarthome.Intents.QUERY :
 				this.parseStatus(resp_result)
 				break
 		}
 
 		return {
+			status: 'SUCCESS',
 			online: true,
-			on: this.power,
-			currentFanSpeedSetting: this.fanSpeedString(),
+			currentFanSpeedSetting: this.fanSpeed.toString(),
+			activeThermostatMode: this.opModeString(), 
 			thermostatMode: this.opModeString(),
-			thermostatTemperatureSetpoint: this.targetTemp
+			thermostatTemperatureSetpoint: this.targetTemp,
+			//thermostatTemperatureAmbient: this.targetTemp
 		};
 	}
 	
@@ -125,7 +131,7 @@ export class AcPartnerDevice extends IMiDevice<IAcCommand> {
 
 	convertImpl(command: string, params: IAcCommand) {
 		switch (command) {
-			case "action.devices.QUERY" : return {
+			case smarthome.Intents.QUERY : return {
 				method: "get_model_and_state",
 				params: []
 			}
@@ -138,21 +144,32 @@ export class AcPartnerDevice extends IMiDevice<IAcCommand> {
 			case "action.devices.commands.ThermostatTemperatureSetpoint": 
 				return this.makeConfig({targetTemp : (params as IThermostatTemperatureSetpoint).thermostatTemperatureSetpoint})
 			case "action.devices.commands.ThermostatSetMode": 
-				return this.makeConfig({opMode : parseInt( (params as IThermostatMode).thermostatMode )})
+				const mode = params as IThermostatMode
+				if (mode.thermostatMode=='off' || mode.thermostatMode=='on') {
+					return {
+						method: "set_power", 
+						params: [mode.thermostatMode]
+					}
+				} else
+					return this.makeConfig({
+						power: true,
+						opMode : this.parseThermostatMode( (params as IThermostatMode) )
+					})
 			default:
 				throw Error(`Unsupported command: ${command}`);
 		}
 	}
 
 	makeConfig(newparams : IVolatileAC) {
-		let po = (newparams.power || this.power)?"0":"1"
+		let po = (newparams.power || this.power)? "1":"0"
 		let mo = newparams.opMode || this.opMode
 		let wi = newparams.fanSpeed || this.fanSpeed
 		let sw = newparams.swingMode || this.swingMode
-		let tt = newparams.targetTemp || this.targetTemp
+		let tt = Math.round( newparams.targetTemp || this.targetTemp )
 		let li = (newparams.led || this.led)?"0":"A"
 		
 		const config = this.prefix+po+mo+wi+sw+tt.toString(16)+li+this.suffix
+		console.trace("send_cmd " + config)
 		return  {
 			method: "send_cmd", 
 			params: [config]

@@ -1,30 +1,103 @@
-import { IStatus, IFanPower, IVacuumCommand, IStartStop, IZone, IDeviceState, IPause, ISegment, IVacumCustomData } from "./types"
+import { IStatus, IFanPower, IVacuumCommand, IStartStop, IZone, ISuccessState, IPause, ISegment, IVacumCustomData, IBatteryCapacity} from "./types"
 import { IMiDevice } from "./midevice";
 import { IModeSetting } from "./types"
 
 
+interface IVacuumState extends ISuccessState {
+    isRunning? : boolean
+    isDocked?: boolean,
+    isPaused? : boolean
+    isCharging? : boolean,
+    generatedAlert?: boolean,
+    currentFanSpeedPercent?: number,
+    descriptiveCapacityRemaining?: IBatteryCapacity,
+    currentModeSettings?: {
+        mode: string
+    },
+    capacityRemaining?: [{
+        unit: "PERCENTAGE",
+        rawValue: number
+    }]
+}
+
 export function fan_power(mode:string) : IFanPower {
-    switch (mode) {
-		case "low": return 101;
-		case "balanced": return 102;
-		case "high" : return 103;
-		case "Turbo_On": return 104;
-		case "mop the floor": return 105;
-		default: throw Error("unknown mode '" + mode + "'")
-    }
+    return parseInt(mode) as IFanPower
+}
+
+export function fan_power_google(fan:number) : string {
+    return fan.toString();
 }
 
 
-export class VacuumDevice extends IMiDevice<IVacuumCommand> {
+export function descriptiveCapacityRemaining(val:number) : IBatteryCapacity {
+	if (val==100) {
+		return "FULL"
+	} else if (val<20) {
+		return "CRITICALLY_LOW"
+	} else if (val<30) {
+		return "LOW"
+	} else if (val<70) {
+		return "MEDIUM"
+	}
+	return "HIGH"
+}
+
+
+export class VacuumDevice extends IMiDevice<IVacuumCommand, IVacuumState> {
+	error_codes = {  
+		0: "No error",
+		1: "Laser distance sensor error",
+		2: "Collision sensor error",
+		3: "Wheels on top of void, move robot",
+		4: "Clean hovering sensors, move robot",
+		5: "Clean main brush",
+		6: "Clean side brush",
+		7: "Main wheel stuck?",
+		8: "Device stuck, clean area",
+		9: "Dust collector missing",
+		10: "Clean filter",
+		11: "Stuck in magnetic barrier",
+		12: "Low battery",
+		13: "Charging fault",
+		14: "Battery fault",
+		15: "Wall sensors dirty, wipe them",
+		16: "Place me on flat surface",
+		17: "Side brushes problem, reboot me",
+		18: "Suction fan problem",
+		19: "Unpowered charging station",
+		21: "Laser disance sensor blocked",
+		22: "Clean the dock charging contacts",
+		23: "Docking station not reachable",
+	}
+
 	error_code: number = 0;
-	water_box_status: number = 0;
-	onResponseImpl(command: string, params: IVacuumCommand, resp_result: any[]): IDeviceState {
-		if (command=="action.devices.QUERY") {
+	
+	onResponseImpl(command: string, params: IVacuumCommand, resp_result: any[]): IVacuumState {
+		if (command == smarthome.Intents.QUERY) {
 			const resp = resp_result[0] as IStatus
 			this.status.state = resp.state
 			this.error_code = resp.error_code
-			this.water_box_status = resp.water_box_status
 			this.fan_power = resp.fan_power
+		
+			return {
+				status: 'SUCCESS',
+				isRunning: this.is_on,
+				isPaused: this.is_paused,
+				isDocked: this.is_docked,
+				isCharging: resp.state == 8,
+				online: true,
+				currentFanSpeedPercent: resp.fan_power,
+				currentModeSettings: {
+					mode: fan_power_google(resp.fan_power)
+				},
+				descriptiveCapacityRemaining: descriptiveCapacityRemaining(resp.battery),
+				capacityRemaining: [
+					{
+						"unit": "PERCENTAGE",
+						"rawValue": resp.battery
+					}
+				]
+			}
 		}
 		
 		if (resp_result == ['ok']) {
@@ -49,17 +122,18 @@ export class VacuumDevice extends IMiDevice<IVacuumCommand> {
 
 				case "action.devices.commands.PauseUnpause" : {
 					const pause = (params as IPause).pause
-					this.status.state = pause? 10 : 5
+					//this.status.state = pause? 10 : 5
 					break
 				}
 
 				case "action.devices.commands.Dock" : {
-					this.status.state = 15
+					//this.status.state = 15
 					break
 				}
 
 				case "action.devices.commands.Locate": {
 					return {
+						status: 'SUCCESS',
 						generatedAlert: true,
 					};
 				}
@@ -67,10 +141,11 @@ export class VacuumDevice extends IMiDevice<IVacuumCommand> {
 		}
 
 		return {
+			status: 'SUCCESS',
 			isRunning: this.is_on,
 			isPaused: this.is_paused,
 			online: true,
-			};
+		};
 	}
 
 	public status: IStatus;
@@ -154,7 +229,11 @@ export class VacuumDevice extends IMiDevice<IVacuumCommand> {
 	}
 
 	get is_on() : boolean {
-		return [5,6,11,17,18].includes(this.status.state)
+		return [5, 6, 11, 17, 18].includes(this.status.state)
+	}
+
+	get is_docked() : boolean {
+		return [8, 9, 13, 14, 15, 100].includes(this.status.state)
 	}
 
 	get is_paused() {
@@ -171,7 +250,7 @@ export class VacuumDevice extends IMiDevice<IVacuumCommand> {
 
 	convertImpl(command: string, params: IVacuumCommand) {
 		switch (command) {
-			case "action.devices.QUERY" : return {
+			case smarthome.Intents.QUERY : return {
 				method: "get_status",
 			}
 			case "action.devices.commands.SetModes" : {
