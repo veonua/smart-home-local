@@ -13,30 +13,26 @@
 
 /// <reference types="@google/local-home-sdk" />
 
-import {  IVacuumCommand,
-          IStatus,
-          IStartStop,
-          IDeviceState,
+import {  IDeviceState,
           IErrorState,
-          IModeSetting,
           IVacumCustomData,
           IDeviceCustomData,
-          IAcCommand,
-          ISuccessState} from "./types";
+          IVacuumCommand,
+          IAcCommand} from "./types";
 
-import { VacuumDevice, fan_power } from "./vacumdevice"
+import { VacuumDevice } from "./vacumdevice"
 import { AcPartnerDevice } from "./acdevice"
-import { IMiDevice } from "./midevice"
+import { IMiDevice, MiError } from "./midevice"
+import { UnexpectedInputPacket } from "./packet"
 
 interface DeviceStatesMap {
   // tslint:disable-next-line
   [key: string]: any
 }
 
-const RESPONSE_SLEEP = 500;
-const portNumber: number = 54321;
+const RESPONSE_SLEEP = 100;
 
-// HomeApp implements IDENTIFY and EXECUTE handler for smarthome local device execution.
+
 export class HomeApp {
   private midevices: Record<string, IMiDevice<any, any>> = {};
 
@@ -147,7 +143,7 @@ export class HomeApp {
   public queryHandler = async (queryRequest: smarthome.IntentFlow.QueryRequest): 
     Promise<smarthome.IntentFlow.QueryResponse> => {
       const payload = queryRequest.inputs[0].payload;
-      console.log('QUERY request', payload);
+      console.log('QUERY request '+ queryRequest.requestId, payload);
 
       const deviceStates: DeviceStatesMap = {}
       await Promise.all(payload.devices.map(async (google_device) => {
@@ -171,7 +167,6 @@ export class HomeApp {
         }
       }
       
-      //console.log("Query response", queryResponse);
       return queryResponse;
     }
   
@@ -179,10 +174,11 @@ export class HomeApp {
   // executeHandler send openpixelcontrol messages corresponding to light device commands.
   public executeHandler = async (executeRequest: smarthome.IntentFlow.ExecuteRequest):
     Promise<smarthome.IntentFlow.ExecuteResponse> => {
-      
+    
+    let requestId = executeRequest.requestId
     // TODO(proppy): handle multiple inputs/commands.
     const command = executeRequest.inputs[0].payload.commands[0];
-    console.log('EXECUTE request:', command);
+    console.log('EXECUTE request ' + requestId, command);
 
     // TODO(proppy): handle multiple executions.
     const execution = command.execution[0];
@@ -190,30 +186,41 @@ export class HomeApp {
     // Create execution response to capture individual command
     // success/failure for each devices.
     const executeResponse =  new smarthome.Execute.Response.Builder()
-      .setRequestId(executeRequest.requestId);
+      .setRequestId(requestId);
   
     await Promise.all(command.devices.map(async (google_device) => {
       try {
         let midevice = this.midevices[google_device.id];
 
-        const result: IDeviceState = await promiseFromCommand(this.app.getDeviceManager(), executeRequest.requestId, google_device.id,
+        let deviceManager = this.app.getDeviceManager()
+        await promiseFromCommand(deviceManager, executeRequest.requestId, google_device.id,
           midevice, execution.command, (execution.params as IVacuumCommand));
+        
+        await midevice.afterExecute(deviceManager, requestId, execution.command, execution.params)
+        // return fresh status
+        let result: IDeviceState = await promiseFromQuery(deviceManager, requestId, google_device.id, midevice, true)
         
         if (result.status=='SUCCESS')
           executeResponse.setSuccessState(google_device.id, result);
         else {
           let e = result as IErrorState;
-          console.error("EXECUTE failed",e, google_device);
+          console.error("EXECUTE failed " + requestId,e, google_device);
           executeResponse.setErrorState(google_device.id, e.errorCode);
         }
       }
       catch (e) {
+        let code;
+        if (e instanceof UnexpectedInputPacket) {
+          code = "networkJammingDetected"
+        } else if (e instanceof MiError) {
+          code = e.google_error
+        } 
         console.error(e);
-        executeResponse.setErrorState(google_device.id, e.errorCode);
+        executeResponse.setErrorState(google_device.id, "networkJammingDetected");// e.errorCode);
       }
 
     }));
-    console.log("EXECUTE response", executeResponse);
+    console.log("EXECUTE response "+requestId, executeResponse);
     return executeResponse.build();
   }
 }
@@ -224,24 +231,15 @@ function _sleep(ms: number) {
 
 async function sendHandshake(deviceManager:smarthome.DeviceManager, requestId: string, device: IMiDevice<any, any>) {
   const handshake : Promise<void> = deviceManager
-          .send(device.makeHandshakeCommand(requestId, portNumber))
+          .send(device.makeHandshakeCommand(requestId))
           .then((result: smarthome.DataFlow.CommandSuccess) => {
             const udpResult = result as smarthome.DataFlow.UdpResponseData;
 
-            console.log("handshake result", udpResult);
-            let response = ""
-            if (udpResult.udpResponse.responsePackets) {
-              response = udpResult.udpResponse.responsePackets[0];
-              // 21310020000000000F85CA0B5F183C88FFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFF
-              // 2131002000000000037439E600013E6A00000000000000000000000000000000
-            } 
-            
-            if (!response) {
-              const device_hex = ("00000000" + device.deviceId.toString(16)).substr(-8);
-              response = "2131002000000000" + device_hex + "5d53e8ab" + device.token
+            if (!udpResult.udpResponse.responsePackets) {
+              throw Error("empty handshake result")
             }
-            
-            device.onHandshake(response)            
+            console.log("handshake result", udpResult);
+            device.onHandshake(udpResult.udpResponse.responsePackets)
           })
 
     await handshake
@@ -257,15 +255,15 @@ export async function promiseFromQuery(deviceManager:smarthome.DeviceManager, re
   if (!noCache) {
     const cache = device.cachedQuery
     if (cache) {
-      console.info("QUERY cached", cache)
+      console.info("QUERY cached "+requestId, cache)
       return cache
     }
   }
 
-  return await sendRequest(deviceManager, requestId, deviceId, device.convert(smarthome.Intents.QUERY, undefined) )
-          .then((result: smarthome.DataFlow.UdpResponseData) => {
-            let res = device.onResponse(smarthome.Intents.QUERY, undefined, result)
-            console.log("QUERY response", res);
+  return await deviceManager.send(device.makeRequest(requestId, smarthome.Intents.QUERY, undefined))
+          .then((result) => {
+            let res = device.onQueryResponse(result as smarthome.DataFlow.UdpResponseData)
+            console.log("QUERY response "+requestId, res);
             return res
           })
 }
@@ -275,73 +273,13 @@ export async function promiseFromCommand(deviceManager:smarthome.DeviceManager, 
         command: string, params: IVacuumCommand|IAcCommand) : Promise<IDeviceState> {
         
   if (device.needsHandshake) {
-    if (!device.initialized) {
-      //////////// Query should initialise the device before. so never should be happening
-      console.warn("force QUERY");
-      await promiseFromQuery(deviceManager, requestId, deviceId, device, true)
-    } else {
       await sendHandshake(deviceManager, requestId, device)
-    }
+    // }
   }
 
-  var res = await sendRequest(deviceManager, requestId, deviceId, device.convert(command, params) )
-        .then((result: smarthome.DataFlow.UdpResponseData) => {
-          console.log("EXECUTE result", result);
-          return device.onResponse(command, params, result)
+  return await deviceManager.send(device.makeRequest(requestId, command, params) )
+        .then((result) => {
+          console.log("EXECUTE result "+requestId, result);
+          return device.onResponse(requestId, command, result as smarthome.DataFlow.UdpResponseData)
         })
-
-  if (res.status!="SUCCESS") {
-    return res
-  }
-
-  if (device instanceof AcPartnerDevice) {
-      await _sleep(RESPONSE_SLEEP);    
-      res = await promiseFromQuery(deviceManager, requestId, deviceId, device, true)
-  }
-
-  if (device instanceof VacuumDevice) {
-    device.status = { state:5 } as IStatus
-    switch (command) {
-      case "action.devices.commands.SetModes": {
-        device.fan_power = fan_power( (params as IModeSetting).updateModeSettings.mode )
-        break;
-      }
-
-      case "action.devices.commands.StartStop": {
-        const new_mode = device.resetModeIfNeed((params as IStartStop))
-        if (new_mode) {
-          await _sleep(RESPONSE_SLEEP);
-          await sendRequest(deviceManager, requestId, deviceId, device.convert_fan_power(new_mode))
-            .then((result: smarthome.DataFlow.UdpResponseData) => {
-            console.log("EXECUTE set default mode ", result);
-            try {
-              device.decode(result.udpResponse.responsePackets)
-            } catch (e) {
-              console.error("set default mode", e)
-            }
-          })
-        }
-      }
-    }
-  }
-      
-  return res
-}
-
-async function sendRequest(
-    deviceManager:smarthome.DeviceManager, 
-    requestId:string, 
-    deviceId:string, 
-    buf:Buffer,
-    expectedResponse:boolean=true) : Promise<smarthome.DataFlow.UdpResponseData> {
-
-  const req = new smarthome.DataFlow.UdpRequestData() 
-  req.requestId = requestId;
-  req.deviceId = deviceId;
-  req.port = portNumber;
-  req.data = buf.toString('hex');
-  if (expectedResponse)
-    req.expectedResponsePackets = 1;
-  
-  return await deviceManager.send(req) as smarthome.DataFlow.UdpResponseData;
 }

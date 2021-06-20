@@ -107,6 +107,30 @@ function lumiAcPartner(deviceId:string) : SmartHomeV1SyncDevices {
       commandOnlyFanSpeed: false,
       commandOnlyTemperatureSetting: false,
   */
+  const swing = {
+    name: 'swing',
+    name_values: [{
+      name_synonym: ["swing"],
+      lang: "en"
+    }],
+    settings: [
+      {
+        setting_name: '0',
+        setting_values: [{
+          setting_synonym: ["Off"],
+          lang: "en"
+        }],
+      },
+      {
+        setting_name: '1',
+        setting_values: [{
+          setting_synonym: ["On"],
+          lang: "en"
+        }],
+      }]
+    }
+
+          
   return {
     type: 'action.devices.types.THERMOSTAT',
     traits: [
@@ -120,7 +144,7 @@ function lumiAcPartner(deviceId:string) : SmartHomeV1SyncDevices {
     name: {
       name: "lumi-acpartner",
       defaultNames: ['Air Conditioner'],
-      nicknames: ['Toshiba AC'],
+      nicknames: ['Toshiba Air Conditioner'],
     },
     willReportState: true,
     attributes: {
@@ -129,6 +153,9 @@ function lumiAcPartner(deviceId:string) : SmartHomeV1SyncDevices {
       commandOnlyFanSpeed: false,
       commandOnlyTemperatureSetting: false,
       queryOnlyTemperatureSetting: false,
+      availableModes: [
+        swing
+      ],
       thermostatTemperatureUnit: 'C',
       thermostatTemperatureRange: {
         minThresholdCelsius: 17,
@@ -350,9 +377,9 @@ app.onQuery(async (body, headers) => {
       deviceStates[device.id] = {
         status: "SUCCESS",
         online: true,
-        thermostatMode: "cool",
+        thermostatMode: "off",
         thermostatTemperatureSetpoint: 23,
-        thermostatTemperatureAmbient: 25.1,
+        thermostatTemperatureAmbient: 10,
       }
     } else {
       deviceStates[device.id] = {

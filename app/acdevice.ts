@@ -1,16 +1,7 @@
-import { IAcCommand, IDeviceState, IOnOff, IFanSpeed, IThermostatTemperatureSetpoint, IThermostatMode, ISuccessState} from "./types"
+import { IAcCommand, IOnOff, IFanSpeed, IThermostatTemperatureSetpoint, IThermostatMode, ISuccessState} from "./types"
 import { IMiDevice } from "./midevice";
-
-
-interface IVolatileAC {
-	targetTemp?: number;
-	led?: boolean;
-	power?: boolean;
-	opMode?: number;
-	fanSpeed?: number;
-	swingMode?: number;
-}
-
+// lumi.acpartner.v1
+// 
 interface IAcState extends ISuccessState {
 	currentFanSpeedSetting? : string|number
 	activeThermostatMode?: string
@@ -19,28 +10,26 @@ interface IAcState extends ISuccessState {
 	thermostatTemperatureSetpoint?: number
 }
 
-export class AcPartnerDevice extends IMiDevice<IAcCommand, IAcState> {
-	state?: Buffer;
-	load_power: number = 0;
-	model?: { raw: Buffer; 
-		airConFormat: number; 
-		airConType: number; 
-		airConBrand: number; 
-		airConRemote: number; 
-		airConState: number; };
+class AcState {
 	targetTemp: number = 0;
-	led: boolean = false;
+	led: string = '0';
 	power: boolean = false;
 	opMode: number = 0;
 	fanSpeed: number = 0;
 	swingMode: number = 0;
-	prefix: any;
-	suffix: any;
-	error_codes = {
-		'-1': "transientError",
-		'-5005': "lockedToRange"
-	};
-	
+
+	constructor (state?: string) {
+		if (!state) return
+
+		let stateBuf = Buffer.from(state, "hex")
+		this.power = parseInt(state[2], 16)==1
+		this.opMode = parseInt(state[3], 16)
+		this.fanSpeed = parseInt(state[4], 16)
+		this.swingMode = parseInt(state[5], 16)
+		this.targetTemp = stateBuf.readUInt8(3)
+		this.led = state[8]
+	}
+
 	opModeString() {
 		if (!this.power) {
 			return 'off'
@@ -78,17 +67,7 @@ export class AcPartnerDevice extends IMiDevice<IAcCommand, IAcState> {
 		}
 	}
 
-	constructor(deviceId:number, token:string, customData : any) {
-		super("action.devices.types.AC_UNIT", deviceId, token)
-	}
-	
-	onResponseImpl(command: string, params: IAcCommand, resp_result: any): IAcState {
-		switch (command) {
-			case smarthome.Intents.QUERY :
-				this.parseStatus(resp_result)
-				break
-		}
-
+	toState() : IAcState {
 		return {
 			status: 'SUCCESS',
 			online: true,
@@ -99,22 +78,46 @@ export class AcPartnerDevice extends IMiDevice<IAcCommand, IAcState> {
 			//thermostatTemperatureAmbient: this.targetTemp
 		};
 	}
+
+	merge(newparams: Partial<AcState>) {
+		let res = new AcState()
+		res.power = (newparams.power ?? this.power)//? "1":"0"
+		res.opMode = newparams.opMode ?? this.opMode
+		res.fanSpeed = newparams.fanSpeed ?? this.fanSpeed
+		res.swingMode = newparams.swingMode ?? this.swingMode
+		res.targetTemp = Math.round( newparams.targetTemp ?? this.targetTemp )
+		res.led = (newparams.led ?? this.led)
+		return res
+	}
+}
+
+export class AcPartnerDevice extends IMiDevice<IAcCommand, IAcState> {
+	load_power: number = 0;
+	model?: { raw: Buffer; 
+		airConFormat: number; 
+		airConType: number; 
+		airConBrand: number; 
+		airConRemote: number; 
+		airConState: number; };
+	state:AcState = new AcState()
+	new_state?:AcState
 	
-	parseStatus(data: any[]) {
+	prefix: string='';
+	suffix: string='';
+	error_codes = {
+		'-1': "transientError",
+		'-5005': "lockedToRange"
+	};
+	
+	constructor(deviceId:number, token:string, customData : any) {
+		super("action.devices.types.AC_UNIT", deviceId, token)
+	}
+	
+	onQueryResponseImpl(data: string[]): IAcState {
 		// ["010500220001186701","011130190100011867","0"]
 		let model = Buffer.from(data[0], "hex")
-		let state = data[1]
-		
-		this.state = Buffer.from(state, "hex")
+		this.state = new AcState(data[1])		
 		this.load_power = parseInt(data[2])
-
-		this.power = parseInt(state[2], 16)==1
-		this.opMode = parseInt(state[3], 16)
-		this.fanSpeed = parseInt(state[4], 16)
-		this.swingMode = parseInt(state[5], 16)
-		this.targetTemp = this.state.readUInt8(3)
-		this.led = state[8]=="A"
-		
 		this.model = {
 			raw: model,
 			airConFormat: model.readInt8(0),
@@ -126,8 +129,8 @@ export class AcPartnerDevice extends IMiDevice<IAcCommand, IAcState> {
 		
 		this.prefix = data[0].slice(0,2) + data[0].slice(8,16);
 		this.suffix = data[0].slice(-1);
+		return this.state.toState()
 	}
-
 
 	convertImpl(command: string, params: IAcCommand) {
 		switch (command) {
@@ -140,36 +143,29 @@ export class AcPartnerDevice extends IMiDevice<IAcCommand, IAcState> {
 				params: [(params as IOnOff).on?"on":"off"]
 			}
 			case "action.devices.commands.SetFanSpeed":
-				return this.makeConfig({fanSpeed : (params as IFanSpeed).fanSpeed as number})
+				return this.makeConfig({power: true, fanSpeed : (params as IFanSpeed).fanSpeed as number})
 			case "action.devices.commands.ThermostatTemperatureSetpoint": 
 				return this.makeConfig({targetTemp : (params as IThermostatTemperatureSetpoint).thermostatTemperatureSetpoint})
 			case "action.devices.commands.ThermostatSetMode": 
 				const mode = params as IThermostatMode
 				if (mode.thermostatMode=='off' || mode.thermostatMode=='on') {
-					return {
-						method: "set_power", 
-						params: [mode.thermostatMode]
-					}
+					return this.makeConfig({ power: mode.thermostatMode=='on' } )
 				} else
 					return this.makeConfig({
 						power: true,
-						opMode : this.parseThermostatMode( (params as IThermostatMode) )
+						opMode : this.state.parseThermostatMode( (params as IThermostatMode) )
 					})
 			default:
 				throw Error(`Unsupported command: ${command}`);
 		}
 	}
 
-	makeConfig(newparams : IVolatileAC) {
-		let po = (newparams.power || this.power)? "1":"0"
-		let mo = newparams.opMode || this.opMode
-		let wi = newparams.fanSpeed || this.fanSpeed
-		let sw = newparams.swingMode || this.swingMode
-		let tt = Math.round( newparams.targetTemp || this.targetTemp )
-		let li = (newparams.led || this.led)?"0":"A"
+	makeConfig(newparams : Partial<AcState>) {
+		this.new_state = this.state.merge(newparams)
 		
-		const config = this.prefix+po+mo+wi+sw+tt.toString(16)+li+this.suffix
-		console.trace("send_cmd " + config)
+		let news = this.new_state
+		const config = this.prefix + (news.power?"1":"0")+news.opMode+news.fanSpeed+news.swingMode+news.targetTemp.toString(16)+news.led+this.suffix
+		console.log("send_cmd " + config)
 		return  {
 			method: "send_cmd", 
 			params: [config]

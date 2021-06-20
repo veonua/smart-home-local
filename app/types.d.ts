@@ -120,16 +120,16 @@ export interface IErrorState extends IDeviceState {
   status: "ERROR"
 }
 
-export interface IDeviceResponse {
+export interface IMiResponse {
   id: number
-  result: any
+  result: [any]
   error?: {
     code: number,
     message: string
   }
 }
 
-export interface IRoboVacuumCommand {
+export interface IMiCommand {
   //id: number;
   method: string;
   params?: any[];

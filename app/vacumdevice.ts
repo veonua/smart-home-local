@@ -1,4 +1,4 @@
-import { IStatus, IFanPower, IVacuumCommand, IStartStop, IZone, ISuccessState, IPause, ISegment, IVacumCustomData, IBatteryCapacity} from "./types"
+import { IStatus, IFanPower, IVacuumCommand, IStartStop, IZone, ISuccessState, IPause, ISegment, IVacumCustomData, IBatteryCapacity, IMiCommand} from "./types"
 import { IMiDevice } from "./midevice";
 import { IModeSetting } from "./types"
 
@@ -71,75 +71,68 @@ export class VacuumDevice extends IMiDevice<IVacuumCommand, IVacuumState> {
 	}
 
 	error_code: number = 0;
+
+	onQueryResponseImpl(resp_result: [any]) : IVacuumState {
+		const resp = resp_result[0] as IStatus
+		this.status.state = resp.state
+		this.error_code = resp.error_code
+		this.fan_power = resp.fan_power
 	
-	onResponseImpl(command: string, params: IVacuumCommand, resp_result: any[]): IVacuumState {
-		if (command == smarthome.Intents.QUERY) {
-			const resp = resp_result[0] as IStatus
-			this.status.state = resp.state
-			this.error_code = resp.error_code
-			this.fan_power = resp.fan_power
-		
+		return {
+			status: 'SUCCESS',
+			isRunning: this.is_on,
+			isPaused: this.is_paused,
+			isDocked: this.is_docked,
+			isCharging: resp.state == 8,
+			online: true,
+			currentFanSpeedPercent: resp.fan_power,
+			currentModeSettings: {
+				mode: fan_power_google(resp.fan_power)
+			},
+			descriptiveCapacityRemaining: descriptiveCapacityRemaining(resp.battery),
+			capacityRemaining: [
+				{
+					unit: "PERCENTAGE",
+					rawValue: resp.battery
+				}
+			]
+		}
+	}
+	
+	onResponseImpl(requestId: string, command: string, resp_result: [any]): any {
+		if (resp_result[0] != 'ok') {
+			console.error(command+" failed", resp_result)
 			return {
-				status: 'SUCCESS',
-				isRunning: this.is_on,
-				isPaused: this.is_paused,
-				isDocked: this.is_docked,
-				isCharging: resp.state == 8,
-				online: true,
-				currentFanSpeedPercent: resp.fan_power,
-				currentModeSettings: {
-					mode: fan_power_google(resp.fan_power)
-				},
-				descriptiveCapacityRemaining: descriptiveCapacityRemaining(resp.battery),
-				capacityRemaining: [
-					{
-						"unit": "PERCENTAGE",
-						"rawValue": resp.battery
-					}
-				]
-			}
-		}
-		
-		if (resp_result == ['ok']) {
-			switch (command) {
-				case "action.devices.commands.StartStop": {
-					const p = (params as IStartStop)
-					if (!p.start) {
-						this.status.state = 6
-					} else {
-						const zone = p.zone
-						if (zone) {
-							if (this.zones[zone])
-								this.status.state = 17
-							else if (this.targets[zone])
-								this.status.state = 16
-						} else {
-							this.status.state = 5
-						}
-					}
-					break
-				}
-
-				case "action.devices.commands.PauseUnpause" : {
-					const pause = (params as IPause).pause
-					//this.status.state = pause? 10 : 5
-					break
-				}
-
-				case "action.devices.commands.Dock" : {
-					//this.status.state = 15
-					break
-				}
-
-				case "action.devices.commands.Locate": {
-					return {
-						status: 'SUCCESS',
-						generatedAlert: true,
-					};
-				}
+				status: 'ERROR',
 			}
 		}
 
+		switch (command) {
+			case "action.devices.commands.StartStop": {
+				// const p = (params as IStartStop)
+				// if (!p.start) {
+				// 	this.status.state = 6
+				// } else {
+				// 	const zone = p.zone
+				// 	if (zone) {
+				// 		if (this.zones[zone])
+				// 			this.status.state = 17
+				// 		else if (this.targets[zone])
+				// 			this.status.state = 16
+				// 	} else {
+				// 		this.status.state = 5
+				// 	}
+				// }
+				break
+			}
+
+			case "action.devices.commands.Locate": {
+				return {
+					status: 'SUCCESS',
+					generatedAlert: true,
+				};
+			}
+		}
 		return {
 			status: 'SUCCESS',
 			isRunning: this.is_on,
@@ -156,6 +149,35 @@ export class VacuumDevice extends IMiDevice<IVacuumCommand, IVacuumState> {
 	
 	last_mode: IFanPower;
 	last_mode_time: number =0 
+
+	async afterExecuteImpl(deviceManager: smarthome.DeviceManager, requestId: string, command: string, params: IVacuumCommand | undefined) {
+		switch (command) {
+			// case "action.devices.commands.SetModes": {
+			//   device.fan_power = fan_power( (params as IModeSetting).updateModeSettings.mode )
+			//   break;
+			// }
+			case "action.devices.commands.StartStop": {
+				const new_mode = this.resetModeIfNeed((params as IStartStop))
+				if (new_mode) {
+					const m : IModeSetting = {
+						updateModeSettings: {
+						mode: new_mode.toString()
+						}
+					}
+
+					await deviceManager.send(this.makeRequest(requestId, "action.devices.commands.SetModes", m))
+					.then((result) => {
+						console.log("EXECUTE set default mode ", result);
+						try {
+							return this.onResponse(requestId, "action.devices.commands.SetModes", result as smarthome.DataFlow.UdpResponseData)
+						} catch (e) {
+							console.error("set default mode", e)
+						}
+					})
+				}
+			}
+		}
+	}
 
 	resetModeIfNeed(par: IStartStop) : IFanPower | null {
 		if (!par.start) return null                                               // do not set mode if stop
@@ -330,13 +352,11 @@ export class VacuumDevice extends IMiDevice<IVacuumCommand, IVacuumState> {
 		}
 	}
 
-	convert_fan_power(value: IFanPower): Buffer {
-		this.packet.data = Buffer.from(JSON.stringify({
-			id:Math.floor(Math.random()*1024) + 1024,
+	convert_fan_power(value: IFanPower): IMiCommand {
+		return {
 			method: "set_custom_mode",
 			params: [value]
-		}), 'utf8');
-		return this.packet.raw
+		}
 	}
 }
 

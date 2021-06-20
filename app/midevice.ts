@@ -1,112 +1,125 @@
-import { IDeviceState, IErrorState, IRoboVacuumCommand, IDeviceResponse, ISuccessState } from "./types"
+import { IDeviceState, IErrorState, IMiCommand, IMiResponse, ISuccessState } from "./types"
 import { Packet } from "./packet";
 
-export class UnexpectedInputPacket extends Error {
+const portNumber: number = 54321;
+
+export class MiError extends Error {
+    google_error: string
+    code: number
+    constructor(mi:IMiResponse, error_codes: { [id: number]: string; } ) {
+        super(mi.error!.message)
+        this.code = mi.error!.code
+        this.google_error = error_codes[this.code]
+    }
 }
 
 export abstract class IMiDevice<Command, State extends ISuccessState> {
-    initialized: boolean = false
     error_codes: { [id: number]: string; } = {};
-    
     type: string;
     get needsHandshake() { return this.packet.needsHandshake };
 	packet: Packet;
     deviceId: number;
     deviceIdString: string;
-	token: string;
     lastQueryResponse: number = 0;
     cachedQueryResponse: State|null = null;
 
     get cachedQuery() { 
-        if (( Date.now() - this.lastQueryResponse ) > 30000) { return null;}
+        if (( Date.now() - this.lastQueryResponse ) > 10*1000) { return null;}
         return this.cachedQueryResponse 
     }
 
-	abstract convertImpl(command: string, params: Command|undefined) : IRoboVacuumCommand
-	abstract onResponseImpl(command: string, params: Command|undefined, resp_result: any[]): State
+    get initialized() {
+        return this.lastQueryResponse>0
+    }
+
+	abstract convertImpl(command: string, params: Command|undefined) : IMiCommand
+    abstract onQueryResponseImpl(resp_result: any): State
+	onResponseImpl(requestId:string, command: string, resp_result: any[]): any {
+        return {
+			status: 'SUCCESS',
+			online: true,
+		};
+    }
+    async afterExecuteImpl(deviceManager:smarthome.DeviceManager, requestId:string, command:string, params:Command|undefined) {}
+    
 
 	constructor(type:string, deviceId:number, token:string) {
         this.type = type
-        this.token = token
         this.deviceId = deviceId
         this.deviceIdString = deviceId.toString()
-		this.packet = new Packet(deviceId) // token
+		this.packet = new Packet(deviceId, token)
 	}
 
-	decode(value: string[]|undefined): IDeviceResponse {
-		if (!value)
-            throw new UnexpectedInputPacket("empty packet");
-		
-		var p = this.packet.clone(); //new Packet(this.deviceId);
-		p.raw = Buffer.from(value[0], "hex");
-		if (p.data==null) {
-            //console.warn("can't decode packet, reset session");
-            this.packet.token = null;
-            throw new UnexpectedInputPacket("can't decode packet, reset session");
-        }
-		var data_str = p.data.toString()
-		data_str = data_str.substring(0, data_str.lastIndexOf("}")+1);
-		console.log("decoded response ", data_str);
-		return JSON.parse(data_str);
-    }
-
-    onResponse(command: string, params: Command|undefined, result: smarthome.DataFlow.UdpResponseData) : IDeviceState {
-		this.packet.updateLast();
+    onQueryResponse(result: smarthome.DataFlow.UdpResponseData) : IDeviceState {
         try {
-            var resp = this.decode(result.udpResponse.responsePackets)
+            var resp = this.packet.decode(result.udpResponse.responsePackets)
         } catch (e) {
+            if (this.cachedQueryResponse) {
+                return this.cachedQueryResponse
+            }
             console.error("decode UPD", e)
             return {
                 errorCode: "networkJammingDetected"
             } as IErrorState
-
-        }
-        
-        if (resp.error) {
-            return {
-                errorCode: this.error_codes[resp.error.code]
-            } as IErrorState
         }
 
-        this.initialized = true
-
-        
-        const res = this.onResponseImpl(command, params, resp.result)
-        if (command == smarthome.Intents.QUERY) {
-            if (res.status == "SUCCESS") {
-                this.lastQueryResponse = Date.now();
-                this.cachedQueryResponse = res
-            }
-        } else {
-            this.cachedQueryResponse = null
+        const res = this.onQueryResponseImpl(resp.result)
+        if (res.status == "SUCCESS") {
+            this.lastQueryResponse = Date.now();
+            this.cachedQueryResponse = res
         }
         return res
+    }
+
+	onResponse(requestId:string, command: string, result: smarthome.DataFlow.UdpResponseData) : IDeviceState {
+        var resp = this.packet.decode(result.udpResponse.responsePackets)
+        
+        if (resp.error) {
+            throw new MiError(resp, this.error_codes)
+        }
+        this.cachedQueryResponse = null
+        return this.onResponseImpl(requestId, command, resp.result)
 	}
 
-    convert(command: string, params: Command|undefined) {
-        let micom = { ...{id:this.packet.msgCounter}, ...this.convertImpl(command, params) }
-
-        const s = JSON.stringify(micom).replace('"method":{"', '"').replace(']"}}', ']"}').replace('"},"', '","');
-        this.packet.data = Buffer.from(s, 'utf8');
-        this.packet.msgCounter ++
-
-		return this.packet.raw
-    }
-
-    onHandshake(response: string) { //  | number[]
+    onHandshake(response: string[]) { //  | number[]
+        this.packet.decode(response)
+        // 21310020000000000 F85CA0 B5F183C88FFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFF
+        // 21310020000000000 37439E 600013E6A00000000000000000000000000000000
+            
         //const device_hex = ("00000000" + this.deviceId.toString(16)).substr(-8);
-        let resp = response.substring(0, response.length-this.token.length) + this.token
-        this.packet.raw = Buffer.from(resp, "hex");
+        //let resp = response.substring(0, response.length-this.token.length) + this.token
+        //this.packet.raw = Buffer.from(resp, "hex");
     }
 
-    makeHandshakeCommand(requestId: string, portNumber: number): smarthome.DataFlow.CommandRequest {
+    async afterExecute(deviceManager:smarthome.DeviceManager, requestId:string, command:string, params:Command|undefined) {
+        this.lastQueryResponse = 0
+        return await this.afterExecuteImpl(deviceManager, requestId, command, params)    
+    }
+
+    makeHandshakeCommand(requestId: string): smarthome.DataFlow.CommandRequest {
         console.debug("sending hanshake...");
         const handshakeCommand = new smarthome.DataFlow.UdpRequestData();
         handshakeCommand.requestId = requestId;
         handshakeCommand.deviceId = this.deviceIdString;
         handshakeCommand.port = portNumber;
-        handshakeCommand.data = "21310020ffffffffffffffffffffffffffffffffffffffffffffffffffffffff";
+        handshakeCommand.data = this.packet.handshake
         handshakeCommand.expectedResponsePackets = 1;
         return handshakeCommand
     }
+
+    makeRequest(
+        requestId:string, 
+        command: string, params: Command|undefined) : smarthome.DataFlow.UdpRequestData {
+    
+        const req = new smarthome.DataFlow.UdpRequestData() 
+        req.requestId = requestId;
+        req.deviceId = this.deviceIdString//deviceId;
+        req.port = portNumber;
+        let buf = this.packet.encode(this.convertImpl(command, params))
+        req.data = buf.toString('hex');
+        console.log(" data "+req.data)
+        req.expectedResponsePackets = 1;
+        return req
+    }
+
 }
