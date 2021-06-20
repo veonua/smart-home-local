@@ -1,9 +1,10 @@
 # Roborock advance
 
-This unofficial integration of the [Local Home SDK](https://developers.google.com/actions/smarthome/concepts/local) to control Roborock Vacuum cleaner. 
+This unofficial integration of the [Local Home SDK](https://developers.google.com/actions/smarthome/concepts/local) to control Roborock Vacuum cleaner and Aquara AC partner v1. 
 
 Current version supports :
 
+### Vacuum:
 + device start/stop/pause
 + device docking
 + device location
@@ -18,9 +19,22 @@ Current version supports :
    5. turbo
 + predefined target points, go to position
 
-Not supported:
-+ UDP response is not available in Local Home SDK 0.1.0
-  + see [issue](https://issuetracker.google.com/issues/139276385)
+### Air Conditioner:
++ modes
+    - cooling
+    - heating
+    - auto(eco)
+    - dry
+    - fan
+    - off
++ fan speed
+    - low
+    - medium
+    - high
+    - auto
++ set temperature in range of 17*..30* C
+
+Local Home SDK requires ambient temperature to be reported to be able to set temperature,
 
 The Local Home SDK allows to execute smart home intents directly on Google Home smart speakers and Nest smart displays. 
 
